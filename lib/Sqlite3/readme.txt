@@ -1,0 +1,2 @@
+sqlite3的delphi驱动，如果不需要加密功能，只需将官网提供的sqlite3.dll放在工程目录下并这两个PAS加入工程即可使用。
+如需使用加密功能，可以到http://system.data.sqlite.org/index.html/doc/trunk/www/downloads.wiki 下载System.data.sqlite.dll或者SQLite.Interop.dll,并将其改名为Sqlite3.dll即可使用。

@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+	<Transactions>
+    <Transaction>2017/05/06 08:44:38.207.dfm,D:\work\windows\delphi\project\record\project\timeManager\Unit1.dfm=D:\work\windows\delphi\project\record\project\timeManager\Form\TestForm.dfm</Transaction>
+    <Transaction>2017/05/06 08:44:38.207.pas,D:\work\windows\delphi\project\record\project\timeManager\Unit1.pas=D:\work\windows\delphi\project\record\project\timeManager\Form\TestForm.pas</Transaction>
+    <Transaction>2017/05/12 19:51:19.777.dfm,D:\work\windows\delphi\project\record\project\timeManager\Form\TestForm.dfm=</Transaction>
+    <Transaction>2017/05/12 19:51:19.777.pas,D:\work\windows\delphi\project\record\project\timeManager\Form\TestForm.pas=</Transaction>
+    <Transaction>2017/05/21 13:59:05.300.dfm,D:\work\windows\delphi\project\record\project\timeManager\Unit1.dfm=D:\work\windows\delphi\project\record\project\timeManager\Form\setRecord.dfm</Transaction>
+    <Transaction>2017/05/21 13:59:05.300.pas,D:\work\windows\delphi\project\record\project\timeManager\Unit1.pas=D:\work\windows\delphi\project\record\project\timeManager\Form\setRecord.pas</Transaction>
+    <Transaction>2017/05/24 12:02:41.000.909,=D:\work\windows\delphi\project\record\project\timeManager\Unit1.pas</Transaction>
+    <Transaction>2017/05/24 12:04:29.000.258,D:\work\windows\delphi\project\record\project\timeManager\Form\dataBaseOperate.pas=D:\work\windows\delphi\project\record\project\timeManager\Unit1.pas</Transaction>
+    <Transaction>2017/05/24 12:04:29.000.258,D:\work\windows\delphi\project\record\project\timeManager\Form\dataBaseOperate.dfm=D:\work\windows\delphi\project\record\project\timeManager\Unit1.dfm</Transaction>
+    <Transaction>2017/05/26 21:39:39.000.461,=D:\work\windows\delphi\project\record\project\timeManager\Form\usDataBaseOperate.pas</Transaction>
+    <Transaction>2017/05/27 11:30:08.000.285,D:\work\windows\delphi\project\record\project\timeManager\Form\usDataBaseOperate.pas=</Transaction>
+    <Transaction>2017/07/30 20:59:33.000.579,=D:\work\windows\delphi\project\record\project\timeManager\Form\CustomDrawDemoMain.pas</Transaction>
+    <Transaction>2017/07/30 21:00:37.000.429,=D:\work\windows\delphi\project\record\project\timeManager\Form\DemoBasicMain.pas</Transaction>
+    <Transaction>2017/07/30 21:21:31.000.845,D:\work\windows\delphi\project\record\project\timeManager\Form\CustomDrawDemoMain.pas=</Transaction>
+    <Transaction>2017/07/30 21:21:38.000.087,=D:\work\windows\delphi\project\record\project\timeManager\Form\CustomDrawDemoMain.pas</Transaction>
+  </Transactions>
+</BorlandProject>

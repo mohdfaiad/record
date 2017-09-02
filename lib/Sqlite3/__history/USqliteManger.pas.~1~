@@ -1,0 +1,291 @@
+unit USqliteManger;
+
+{
+  描述：sqlite3数据库操作类
+  作用：用于访问需要OCR处理的图片信息
+  日期：20161022
+  作者：张旭煜
+}
+
+interface
+uses
+  SQLite3,SQLiteTable3,SysUtils,Classes,StrUtils, windows;
+
+type
+
+  TMySqlite3 = class
+  private
+    CS: TRTLCriticalSection;
+    sldb: TSQLiteDatabase;
+    fdbpath:string;
+    function GetDbPath():string;
+  public
+    datafilePath: string;
+    function OpenDbFile(const FileName: string): boolean;
+
+    procedure lock();
+    procedure unlock();
+    procedure BeginTans;
+    procedure Rollback;
+    procedure Commit;
+    function ExcuteSql(const sql: String): boolean;
+    function ReadInt(const sql: String): integer;
+    function ReadString(const sql: String): String;
+    function ReadStringlist(const sql: String): TStringList;
+    function GetTable(const sql: String): TSQLiteTable;
+    constructor create;
+    destructor destroy;override;
+    {
+    0:成功
+    1:已经存在
+    -1:失败
+    }
+    //function pushWaybill(rd:TMyWaybillRecord):Integer;
+    //function isExists(no:string):Boolean;
+  end;
+           {
+  TRecTask = Record
+    id: integer;
+    waybillno: string;//单号
+	  weight: string;//重量
+	  bmpPath: string;//原图路径
+	  picPath: string;//压缩后图片路径
+	  recordTime: string;//记录生成时间
+	  status: integer;//状态 0-新生成 1-jpg上传完成; 99-OCR处理完成
+	  pos: string;//条码位置信息
+  end;
+
+  }
+
+//var
+//  FVaildWaybillList:TStringlist;
+var
+  gDbOpr: TMySqlite3;
+
+implementation
+uses
+  Forms, uMm;//ULog,UAppReg, ; // ,UnGlobalFun,DateUtils
+{ TMySqlite3 }
+
+procedure TMySqlite3.BeginTans;
+begin
+  sldb.BeginTransaction;
+end;
+
+procedure TMySqlite3.Commit;
+begin
+  sldb.Commit;
+end;
+
+constructor TMySqlite3.create;
+var
+  dbpath:string;
+  createSql:string;
+  filepath:string;
+begin
+  {filepath := ExtractFilePath(Application.ExeName) + 'waybills.txt';
+
+  FVaildWaybillList := TStringlist.Create;
+  if (FileExists(filepath))then
+  begin
+     FVaildWaybillList.LoadFromFile(filepath);
+  end; }
+  InitializeCriticalSection(CS);
+  datafilePath := '';
+  dbpath := gMm.OcrDbFileName;
+  sldb := TSQLiteDatabase.Create(dbpath);
+
+  //检测是否存在快递面单数据表
+ { if (not sldb.TableExists('ocr_return'))then
+  begin
+    //不存在该表 则创建
+    createSql := 'create table tt_express (id varchar(45) primary key ,'+
+                  'waybillNo varchar(45), '+
+                  'weight varchar(16),'+
+                  'picPath varchar(200),'+
+                  'createTime varchar(32),'+
+                  'status integer,'+
+                  'version integer)';
+    sldb.ExecSQL(createSql);
+    createSql := 'CREATE UNIQUE INDEX index_waybillNo '+
+                  'on tt_express (waybillNo)';
+    sldb.ExecSQL(createSql);
+  end; }
+
+ { if (not sldb.TableExists('tt_express_tmp'))then
+  begin
+    //不存在该表 则创建
+    createSql := 'create table tt_express_tmp (id varchar(45) primary key ,'+
+                  'waybillNo varchar(45), '+
+                  'weight varchar(16),'+
+
+                  'picPath varchar(200),'+
+                  'status integer,'+
+                  'createTime varchar(32))';
+    sldb.ExecSQL(createSql);
+    createSql := 'CREATE UNIQUE INDEX tmp_index_waybillNo '+
+                  'on tt_express_tmp (waybillNo)';
+    sldb.ExecSQL(createSql);
+  end;
+  //备份表
+  if (not sldb.TableExists('tt_express_bak'))then
+  begin
+    //不存在该表 则创建
+    createSql := 'create table tt_express_bak (id varchar(45) primary key ,'+
+                  'waybillNo varchar(45), '+
+                  'weight varchar(16),'+
+                  'picPath varchar(200),'+
+                  'createTime varchar(32),'+
+                  'status integer,'+
+                  'version integer)';
+    sldb.ExecSQL(createSql);
+    createSql := 'CREATE UNIQUE INDEX bak_index_waybillNo '+
+                  'on tt_express_bak (waybillNo)';
+    sldb.ExecSQL(createSql);
+  end;
+  //向注册表写入本软件的数据库路径
+  UAppReg.RegAppConfigPath('datpath',dbpath);
+
+  //将写同步关闭 提升插入速率
+  sldb.ExecSQL('PRAGMA synchronous = OFF');   }
+	  //DoBackData; }
+end;
+
+destructor TMySqlite3.destroy;
+begin
+  sldb.Free;
+  DeleteCriticalSection(CS);
+  inherited;
+end;
+         {
+//获取数据库的路径
+function TMySqlite3.DoBackData: Boolean;
+var
+  time:Int64;
+  sqlstr:string;
+begin
+  //一天前的数据全部备份
+  ULog.PrintLog('Sqlite Back ',OPER_INFO);
+  time := DateTimeToUnix(DateUtils.IncDay( Now() , -1 ));
+  sqlstr := 'INSERT INTO tt_express_bak select * from tt_express where version<=?';
+  try
+    sldb.ExecSQL(sqlstr,[time]);
+    sldb.ExecSQL('delete from tt_express where version<=?',[time]);
+  except
+    PrintLog('Sqlite Back Error：'+sldb.LastErrorMsg,ERROR_INFO);
+  end;
+  ULog.PrintLog('Sqlite Back Success',OPER_INFO);
+end;   }
+
+function TMySqlite3.ExcuteSql(const sql: String): boolean;
+begin
+  try
+    sldb.ExecSQL(sql, []);
+    Result := True;
+  except
+    Result := False;
+  end;
+end;
+
+function TMySqlite3.GetDbPath: string;
+var
+  dir:string;
+begin
+  dir:= ExtractFilePath(Application.ExeName);
+  dir := dir + 'dat';
+  if not DirectoryExists(dir) then
+  begin
+    CreateDir(dir);
+  end;
+  Result := dir + '\express.dat';
+end;             {
+//向数据库插入一条记录
+function TMySqlite3.isExists(no: string): Boolean;
+var
+  slTable:TSQLiteTable;
+begin
+  Result := False;
+  slTable := sldb.GetTable('SELECT * FROM tt_express WHERE waybillNo=?',[no]);
+  if (slTable.RowCount > 0) then
+  begin
+    Result := True;
+    Exit;
+  end;
+end;   }
+function TMySqlite3.GetTable(const sql: String): TSQLiteTable;
+begin
+  Result := sldb.GetTable(sql, []);
+end;
+
+procedure TMySqlite3.lock;
+begin
+  EnterCriticalSection(CS);
+end;
+
+function TMySqlite3.OpenDbFile(const FileName: string): boolean;
+begin
+  Result := False;
+  if FileExists(FileName) then
+  begin
+    if Assigned(sldb) then
+      sldb.Free;
+    try
+      sldb := TSQLiteDatabase.Create(FileName);
+      Result := True;
+      datafilePath := FileName;
+    except
+    end;
+  end;
+end;
+
+function TMySqlite3.ReadInt(const sql: String): integer;
+var
+  tbl: TSQLiteTable;
+  ret: string;
+begin
+  Result := -999;
+  ret := ReadString(sql);
+  if ret <> '' then
+    Result := StrToIntDef(ret, Result);
+end;
+
+function TMySqlite3.ReadString(const sql: String): String;
+var
+  tbl: TSQLiteTable;
+begin
+  tbl := sldb.GetTable(sql, []);
+  try
+    if tbl.RowCount > 0 then
+    try
+      Result := tbl.Fields[0];
+    except
+      Result := '';
+    end;
+  finally
+    tbl.Free;
+  end;
+end;
+
+function TMySqlite3.ReadStringlist(const sql: String): TStringList;
+
+begin
+
+end;
+
+procedure TMySqlite3.Rollback;
+begin
+  sldb.Rollback;
+end;
+
+procedure TMySqlite3.unlock;
+begin
+  LeaveCriticalSection(CS);
+end;
+        {
+initialization
+  gDbOpr := TMySqlite3.create;
+
+finalization
+  gDbOpr.Free;  }
+
+end.

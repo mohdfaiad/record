@@ -1,0 +1,536 @@
+unit uRecord;
+
+interface
+
+uses
+  Classes, Windows, DbOperate, uConst, oleacc, Variants, SysUtils, Messages,
+  dyKeyMouseHook, Tconfig;
+
+type
+  TMyRecord = class
+  private
+    FDayDbObj: TDbObj;
+    function InitHook(): TError;  // 初始化钩子
+    function GetCurrentUrl(processHandle: Integer; aProcessName: string): string;
+    //采集记录
+    function CollectActiveRecord(): integer;
+    function CollectValueRecord(): integer;
+    // 保存到数据库
+    function AddInternerRecord(url: string): integer;
+    procedure AddActiveRecord(Processname: string);
+    function JudgeUseStatus(): Integer;         //判断用户活动键盘钩子
+    procedure AddStarValueTagRecord(guid: string);
+    procedure AddStopValueTagRecord(guid: string; valueTag: Integer);
+  public
+    constructor Create(dayDbObj: TDbObj);
+    destructor Destroy();
+  end;
+
+var
+  processCount: Integer; // 记录次数
+  Acc, accchild: IAccessible;
+  VarParent: variant;
+  res: hresult;
+  curentUrl1, guidS, classPath, lastrecordTime, lastUrlTime, lastRecordInfo, lasturl: string;
+  valueTag: Boolean;
+
+implementation
+// mass
+
+function max(a, b: integer): integer;
+begin
+  if a > b then
+    result := a
+  else
+    result := b;
+end;
+
+function getAccstate(state: longint): string;
+var
+  n, i: longint;
+  r: array[0..255] of char;
+  s: string;
+begin
+  s := '';
+  n := 1;
+  for i := 1 to 29 do
+  begin
+    if state and n <> 0 then
+    begin
+      getstatetext(n, @r, 255);
+      if s <> '' then
+        s := s + ' -- ';
+      s := s + r;
+    end;
+    n := n * 2;
+  end;
+  result := s;
+end;
+
+function getAccrole(role: longint): string;
+var
+  r: array[0..255] of char;
+begin
+  getroletext(role, @r, 255);
+  result := r;
+end;
+
+function GetaccFocus(v: variant): string;
+begin
+  case vartype(v) of
+    VarEmpty:
+      result := 'Cet objet et ses enfants n''ont pas le focus clavier.';
+    VarInteger:
+      if v = CHILDID_SELF then
+        result := 'Cet object lui-m阭e a le focus clavier.'
+      else
+        result := 'L''enfant num閞o ' + inttostr(v) + 'a le focus clavier.';
+    VarDispatch:
+      result := 'Un enfant a le focus clavier (IDispatch)';
+  end;
+end;
+
+function GetaccSelection(v: variant): string;
+begin
+  case vartype(v) of
+    VarEmpty:
+      result := 'Cet objet ou ses enfants ne sont pas s閘ectionn閟.';
+    VarInteger:
+      if v = CHILDID_SELF then
+        result := 'Cet object lui-m阭e est s閘ectionn?'
+      else
+        result := 'L''enfant num閞o ' + inttostr(v) + 'est s閘ectionn?';
+    VarDispatch:
+      result := 'Un enfant est s閘ectionn?(IDispatch)';
+    VarUnknown:
+      result := 'Plusieurs enfants sont s閘ectionn閟 (IEnumVARIANT)';
+  end;
+end;
+
+function Getpropriete(Prop: integer; acc: IAccessible; varID: variant): string;
+var
+  str: pwidechar;
+  n: longint;
+  v: variant;
+begin
+  case Prop of
+    DISPID_ACC_NAME:
+      res := acc.get_accName(varID, str);
+    DISPID_ACC_VALUE:
+      res := acc.get_accValue(varID, str);
+    DISPID_ACC_DESCRIPTION:
+      res := acc.get_accDescription(varID, str);
+    DISPID_ACC_ROLE:
+      res := acc.get_accRole(varID, v);
+    DISPID_ACC_STATE:
+      res := acc.get_accState(varID, v);
+    DISPID_ACC_HELP:
+      res := acc.get_accHelp(varID, str);
+    DISPID_ACC_HELPTOPIC:
+      res := acc.get_accHelpTopic(str, varID, n);
+    DISPID_ACC_KEYBOARDSHORTCUT:
+      res := acc.get_accKeyboardShortcut(varID, str);
+    DISPID_ACC_FOCUS:
+      res := acc.get_accFocus(v);
+    DISPID_ACC_SELECTION:
+      res := acc.get_accSelection(v);
+    DISPID_ACC_DEFAULTACTION:
+      res := acc.get_accDefaultAction(varID, str);
+  end;
+  case res of
+    S_OK:
+      case Prop of
+        DISPID_ACC_NAME, DISPID_ACC_VALUE, DISPID_ACC_DESCRIPTION, DISPID_ACC_HELP, DISPID_ACC_HELPTOPIC, DISPID_ACC_KEYBOARDSHORTCUT, DISPID_ACC_DEFAULTACTION:
+          result := str;
+        DISPID_ACC_ROLE:
+          result := getaccrole(v);
+        DISPID_ACC_STATE:
+          result := getaccstate(v);
+        DISPID_ACC_FOCUS:
+          result := GetAccFocus(v);
+        DISPID_ACC_SELECTION:
+          result := GetaccSelection(v);
+      end;
+    S_FALSE:
+    //  result := 'Vide [FALSE]';
+      Result := '';
+    E_INVALIDARG:
+    //  result := 'Erreur Argument';
+      result := '';
+    DISP_E_MEMBERNOTFOUND:
+    //  result := 'l''objet ne supporte pas cette propri閠?;
+      result := '';
+  else
+    result := 'Erreur inconnue';
+  end;
+end;
+
+function GetName(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_NAME, acc, varID);
+end;
+
+function GetValue(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_VALUE, acc, varID);
+end;
+
+function GetDescription(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_DESCRIPTION, acc, varID);
+end;
+
+function GetRole(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_ROLE, acc, varID);
+end;
+
+function GetState(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_STATE, acc, varID);
+end;
+
+function GetHelp(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_HELP, acc, varID);
+end;
+
+function GetHelpTopic(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_HELPTOPIC, acc, varID);
+end;
+
+function GetKeyShortCut(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_KEYBOARDSHORTCUT, acc, varID);
+end;
+
+function GetFocus(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_FOCUS, acc, varID);
+end;
+
+function GetSelection(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_SELECTION, acc, varID);
+end;
+
+function GetDefaultAction(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_DEFAULTACTION, acc, varID);
+end;
+{ TMyRecord }
+
+function TMyRecord.CollectActiveRecord: integer;
+var
+  activeFormHandle: HWND;
+  buf: array[Byte] of Char;
+  dwProcessID: DWORD;
+  processName: ^string;
+  Caption, temps, aProcessName: string;
+  sonhandle: HWND;
+  ps: array[0..254] of Char;
+  timeout: Integer;
+  proStatus: Cardinal;
+  error, count: Integer;
+  tempActiveProcess: ^TProcessMsg;
+  statTime: TDateTime;
+  activeFormRect: TRect;
+  tpt: tpoint;
+  res: hresult;
+  curentUrl: string;
+begin
+  activeFormHandle := GetForegroundWindow;
+  GetWindowRect(activeFormHandle, activeFormRect);
+  proStatus := 0;
+  GetWindowText(activeFormHandle, buf, SizeOf(buf));
+  if buf <> '' then
+  begin
+    GetWindowThreadProcessId(activeFormHandle, dwProcessID);
+    aProcessName := GetPidtoName(dwProcessID);
+    inc(processCount);
+    if processCount > 500 then
+    begin
+      processCount := 1;
+      FDayDbObj.Commit_Sqlite;
+      FDayDbObj.BeginTans_Sqlite;
+    end;
+    //浏览器处理
+    curentUrl := GetCurrentUrl(activeFormHandle, aProcessName);
+    if curentUrl <> '' then
+    begin
+      AddInternerRecord(curentUrl);
+      curentUrl1 := curentUrl;
+    end;
+    aProcessName := GetPidtoName(dwProcessID);
+    AddActiveRecord(aProcessName);
+  end;
+  result := 0;
+end;
+
+function TMyRecord.CollectValueRecord: integer;
+var
+  UserInfo: Integer;
+begin
+  valueTag := false;
+  UserInfo := JudgeUseStatus;
+  if guidS <> '' then
+  begin
+    if (valueTag) then
+    begin
+      AddStopValueTagRecord(guidS, 1);
+    end
+    else
+    begin
+      AddStopValueTagRecord(guidS, -1);
+    end;
+    SetShareCount;
+    guidS := '';
+  end;
+  guidS := GetGUID();                                                            //获得guid
+  guidS := StringReplace(guidS, '-', '', [rfReplaceAll]);
+  guidS := Copy(guidS, 2, Length(guidS) - 2);
+  AddStarValueTagRecord(guidS);
+end;
+
+function TMyRecord.GetCurrentUrl(processHandle: Integer; aProcessName: string): string;
+var
+  res: hresult;
+  url: string;
+  tpt: tpoint;
+  activeFormRect: TRect;
+  tWidth: Integer;
+begin
+  url := '';
+  GetWindowRect(processHandle, activeFormRect);
+  //谷歌
+  if aProcessName = 'chrome.exe' then
+  begin
+    tpt.X := activeFormRect.Left + 160;
+    tpt.y := activeFormRect.Top + 54;
+  end
+  // 火狐
+  else if (aProcessName = 'firefox.exe') then
+  begin
+    tWidth := (activeFormRect.Right - activeFormRect.Left) div 3 - 10;
+    tpt.X := activeFormRect.Left + tWidth;
+    tpt.y := activeFormRect.Top + 58;
+  end
+  //ie
+  else if (aProcessName = 'iexplore.exe') then
+  begin
+    tpt.X := activeFormRect.Left + 105;
+    tpt.y := activeFormRect.Top + 31;
+  end
+  else
+  begin
+    Exit;
+  end;
+  res := AccessibleObjectFrompoint(tpt, @acc, VarParent);
+  if res <> S_OK then
+    exit;
+  url := getvalue(acc, VarParent);
+  Result := url;
+end;
+
+function TMyRecord.InitHook: TError;
+begin
+  Result.errorCode := 0;
+  Result.errorMsg := '';
+  try
+    dyLoadHookDll(gMm.AppDir + '\KeyMouseHook.dll');
+  except
+    Result.errorCode := ERROR_LOADDLL;
+    Result.errorMsg := '加载dll错误';
+    Exit;
+  end;
+  if not EnableKeyHook then
+  begin
+    Result.errorCode := ERROR_KEYHOOK;
+    Result.errorMsg := '打开键盘钩子失败';
+    Exit;
+
+  end;
+  if not OpenMouseHook(aMainHandle, 0) then
+  begin
+    Result.errorCode := ERROR_MOUSEHOOK;
+    Result.errorMsg := '打开鼠标钩子失败';
+    Exit;
+  end;
+end;
+
+function TMyRecord.JudgeUseStatus: Integer;
+var
+  i, count: Integer;
+  myMsg: Integer;
+  key: Char;
+  ps: TPoint;
+begin
+  //鼠标钩子
+  valueTag := False;
+  Result := -1;
+  count := GetMouseCount - 1;
+  for i := 0 to count do
+  begin
+    ps.X := GetMouse(i).pt.x;
+    ps.Y := GetMouse(i).pt.y;
+    myMsg := GetMessageMsg(i);
+    case myMsg of
+      WM_LBUTTONDOWN:
+        begin
+          Result := myMsg;
+          valueTag := True;
+
+          Exit;
+        end;
+      WM_LBUTTONDBLCLK:
+        begin
+          valueTag := True;
+          Result := myMsg;
+
+          Exit;
+        end;
+      WM_RBUTTONDOWN:
+        begin
+          valueTag := True;
+          Result := myMsg;
+
+          Exit;
+        end;
+      WM_RBUTTONDBLCLK:
+        begin
+          valueTag := True;
+          Result := myMsg;
+
+          Exit;
+        end;
+      WM_MBUTTONDOWN:
+        begin
+          valueTag := True;
+          Result := myMsg;
+
+        end;
+      WM_MBUTTONDBLCLK:
+        begin
+          valueTag := True;
+          Result := myMsg;
+
+          Exit;
+        end;
+      //滚轮
+      WM_MOUSEWHEEL:
+        begin
+          valueTag := True;
+          Result := myMsg;
+          Exit;
+        end;
+    end;
+  end;
+  count := GetKeyCount - 1;
+  for i := 0 to count do
+  begin
+    key := GetKey(i);
+    if key <> '' then
+    begin
+      valueTag := True;
+      Exit;
+    end;
+  end;
+end;
+
+function TMyRecord.AddInternerRecord(url: string): integer;
+const
+  fmtInsert = 'INSERT INTO internet_record (''url'',''record_time'' ) VALUES(''%s'',''%s'')';
+var
+  sqlS: string;
+  error: Integer;
+  starT, cost: Integer;
+  tTime: string;
+begin
+
+  tTime := FormatDateTime('YYYY-MM-DD HH:MM:SS', now);
+  if lastUrlTime <> tTime then
+  begin
+    sqlS := Format(fmtInsert, [AnsiToUtf8(url), tTime]);
+    try
+      starT := GetTickCount;
+      error := FDayDbObj.ExcuteSql_Sqlite(sqlS);
+      cost := GetTickCount - starT;
+    except
+
+    end;
+  end;
+  lastUrlTime := tTime;
+end;
+
+procedure TMyRecord.AddStarValueTagRecord(guid: string);
+const
+  fmtInsert = 'INSERT INTO valuetime_record (''guids'',''star_time'' ) VALUES(''%s'',''%s'')';
+var
+  s: string;
+  tTime: string;
+begin
+  tTime := FormatDateTime('YYYY-MM-DD HH:MM:SS', now);
+  s := Format(fmtInsert, [guid, tTime]);
+  try
+    FDayDbObj.ExcuteSql_Sqlite(s);
+  except
+  end;
+end;
+
+procedure TMyRecord.AddStopValueTagRecord(guid: string; valueTag: Integer);
+const
+  fmtInsert = 'INSERT INTO pc_process_record (''action_process'',''record_time'' ) VALUES(''%s'',''%s'')';
+var
+  sqlS: string;
+  error: Integer;
+  tTime: string;
+begin
+  tTime := FormatDateTime('YYYY-MM-DD HH:MM:SS', now);
+  sqlS := 'update valuetime_record set stop_time =''' + tTime + ''', value_tag = ' + IntToStr(valueTag) + ' where guids =''' + guid + '''';
+  try
+    error := FDayDbObj.ExcuteSql_Sqlite(sqlS);
+  except
+   // Mylog.writeWorkLog(Format('pc_process_record数据库插入失败，进程名：%s, sql：%s, 错误代码：%d ', [Processname, sqlS, error]), -1);
+  end;
+end;
+
+procedure TMyRecord.AddActiveRecord(Processname: string);
+const
+  fmtInsert = 'INSERT INTO pc_process_record (''action_process'',''record_time'' ) VALUES(''%s'',''%s'')';
+var
+  sqlS: string;
+  error: Integer;
+  starT, cost: Integer;
+  tTime: string;
+begin
+  tTime := FormatDateTime('YYYY-MM-DD HH:MM:SS', now);
+  sqlS := Format(fmtInsert, [Processname, tTime]);
+  try
+    starT := GetTickCount;
+    error := FDayDbObj.ExcuteSql_Sqlite(sqlS);
+    cost := GetTickCount - starT;
+  except
+     // Mylog.writeWorkLog(Format('pc_process_record数据库执行失败，进程名：%s, sql：%s, 错误代码：%d ', [Processname, sqlS, error]), -1);
+  end;
+end;
+
+constructor TMyRecord.Create(dayDbObj: TDbObj);
+begin
+  FDayDbObj := dayDbObj;
+  FError := InitHook;
+  if FError.errorCode <> 0 then
+  begin
+    errorS := Format('Init keyMousehook fail: reason %s,errorCode %d', [FError.errorMsg, FError.errorCode]);
+    Mylog.writeWorkLog(errorS, -1);
+    Exit;
+  end;
+end;
+
+destructor TMyRecord.Destroy;
+begin
+
+end;
+
+end.
+

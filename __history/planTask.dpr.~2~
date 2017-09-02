@@ -1,0 +1,38 @@
+program planTask;
+
+uses
+  Windows,
+  Forms,
+  taskForms in 'Form\taskForms.pas' {createTaskForm},
+  uTask in 'lib\project\uTask.pas',
+  ShowUnit in 'Form\ShowUnit.pas' {ShowForm},
+  dayAccountBook in 'Form\dayAccountBook.pas' {acountBook},
+  remindBox in 'Form\remindBox.pas' {remainForm},
+  calendarForm in 'Form\calendarForm.pas' {Form1},
+  DemoBasicMain in 'Form\DemoBasicMain.pas' {DemoBasicMainForm},
+  MainUnit in 'Form\MainUnit.pas' {MainForm},
+  CustomDrawDemoMain in 'Form\CustomDrawDemoMain.pas' {CustomDrawDemoMainForm},
+  recordVierFrm in 'Form\recordVierFrm.pas' {frmRecord},
+  uConst in 'lib\project\uConst.pas',
+  uRecord in 'uRecord.pas';
+
+{$R *.res}
+begin
+  CreateMutex(nil, True, '信息采集器-PC');
+  if GetLastError <> ERROR_ALREADY_EXISTS then
+  //if true then
+  begin
+    Application.Initialize;
+    Application.MainFormOnTaskbar := True;
+    Application.ShowMainForm := False;
+    Application.CreateForm(TMainForm, MainForm);
+  Application.CreateForm(TShowForm, ShowForm);
+  Application.CreateForm(TCustomDrawDemoMainForm, CustomDrawDemoMainForm);
+  Application.Run;
+  end
+  else
+  begin
+    Application.MessageBox('已经运行一个实例', '提示', MB_OK);
+  end;
+end.
+

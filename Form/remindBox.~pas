@@ -1,0 +1,71 @@
+unit remindBox;
+
+interface
+
+uses
+  Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
+  Dialogs, StdCtrls, Spin, ComCtrls;
+
+type
+  TRemindRecord = record
+    id: Integer;
+    remindTitle: string;
+    remindLocation: string;
+    starTime: string;
+    stopTime: string;
+    remindContent: string;
+  end;
+
+  TMyRemindEvent = procedure(Sender: TObject; myRemind: TRemindRecord) of object;
+
+  TremainForm = class(TForm)
+    Label1: TLabel;
+    Label2: TLabel;
+    Label3: TLabel;
+    mmContent: TMemo;
+    Label4: TLabel;
+    Label5: TLabel;
+    edtTitle: TEdit;
+    edtLocation: TEdit;
+    Button1: TButton;
+    DateTimePicker1: TDateTimePicker;
+    TimePicker1: TDateTimePicker;
+    DateTimePicker2: TDateTimePicker;
+    TimePicker2: TDateTimePicker;
+    procedure Button1Click(Sender: TObject);
+  private
+    { Private declarations }
+
+  public
+    { Public declarations }
+    FRemindEvent: TMyRemindEvent;
+    property OnremindEvent: TMyRemindEvent read FRemindEvent write FRemindEvent;
+  end;
+
+var
+  remainForm: TremainForm;
+
+implementation
+
+{$R *.dfm}
+
+procedure TremainForm.Button1Click(Sender: TObject);
+var
+  sqlS: string;
+  myRemind: TRemindRecord;
+begin
+  //±íµ¥
+  myRemind.remindTitle := edtTitle.Text;
+  myRemind.remindLocation := edtLocation.Text;
+  myRemind.starTime := FormatDateTime('YYYY-MM-DD ', DateTimePicker1.Date) + FormatDateTime('HH:MM', TimePicker1.Time);
+  myRemind.stopTime := FormatDateTime('YYYY-MM-DD ', DateTimePicker2.Date) + FormatDateTime('HH:MM', TimePicker2.Time);
+  myRemind.remindContent := mmContent.Text;
+  if Assigned(FRemindEvent) then
+  begin
+    OnremindEvent(Self, myRemind);
+  end;
+  Self.Close;
+end;
+
+end.
+

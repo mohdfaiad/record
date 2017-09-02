@@ -1,0 +1,305 @@
+unit DbOperate;
+
+interface
+
+uses
+  Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
+  ADODB, SQLite3, SQLiteTable3, StdCtrls;
+
+const
+  // 数据库 400
+  ERROR_OPENFAIL = -400;           //打开数据库失败
+  SUS_OPEN = 400;                   //打开成功
+  SUS_QUERY = 401;                   //查询成功
+  ERROR_QUERY = -401;                 //查询失败
+  SUS_DELETE = 402;                   //删除数据库表单成功
+  ERROR_DELETE = -402;                 //删除数据库表单失败
+  SUS_CLEAR = 403;                   //清除数据库表单成功
+  ERROR_CLEAR = -403;                 //清除数据库表单失败
+  SUS_INSERT = 404;                   //插入数据库表单成功
+  ERROR_INSERT = -404;                 //插入数据库表单失败
+  SUS_UPDATE = 405;                   //插入数据库表单成功
+  ERROR_UPDATE = -405;                 //插入数据库表单失败
+  SUS_CREATE = 406;                   //插入数据库表单成功
+  ERROR_CREATE = -406;                 //插入数据库表单失败
+  ERROR_NOTFILE = -407;                 //数据库文件不存在
+
+type
+  TDbObj = class
+  private
+    FObjErrorMsg: Integer;
+    FdbObj: TADOQuery;
+    Fsldb: TSQLiteDatabase;  //
+    Ftlb: TSQLiteTable;
+    FCS: TRTLCriticalSection;
+    function QueryRecord_Sqlite(SQLString: string): Integer;  //临界区
+    function GetdbObj(): TADOQuery;
+    function GetTlb(): TSQLiteTable;
+  public
+    constructor Create();
+    destructor Destroy(); override;
+    function OpenDb(DbFilePath: string; DbType: string): integer;                                                   // 打开数据库
+    procedure lock();                                                                                              //临界区
+    procedure unlock();
+    // ado
+    function InsertRecord(SQLString: string; tableName: string; insertContent: array of Variant): Integer;         //插入一行记录
+    function UpdateDbRecord(SQLString: string): integer;                                                           // 更新数据库
+    function QueryRecord(SQLString: string): Integer;                                                              // 查询数据库                                                           // 查询数据库
+    function ClearDbTable(tablename: string): integer;                                                             //清除表单
+    function DeleteDbTable(tablename: string): integer;                                                           // 删除表单
+    function CreateDbTable(tablename: string): integer;                                                          // 创建表单
+    property ObjErrorMsg: Integer read FObjErrorMsg;
+    property dbObj: TADOQuery read GetdbObj;
+    //sqlite
+    procedure BeginTans_Sqlite;
+    procedure Rollback_Sqlite;
+    procedure Commit_Sqlite;
+    function ExcuteSql_Sqlite(const sql: string): Integer;
+    function GetTable_Sqlite(const sql: string): Integer;
+    property tlb: TSQLiteTable read GetTlb;
+  end;
+
+var
+  myDbObj: TDbObj;
+
+implementation
+
+{ TImageJudge }
+
+procedure TDbObj.BeginTans_Sqlite;
+begin
+  Fsldb.BeginTransaction;
+end;
+
+function TDbObj.ClearDbTable(tablename: string): integer;
+var
+  sSql: string;
+begin
+  sSql := 'delete * from ' + tablename;
+  with FdbObj do
+  begin
+    Close;
+    SQL.Clear;
+    SQL.Add(sSql);
+    try
+      ExecSQL;
+      FObjErrorMsg := SUS_CLEAR;
+      Result := SUS_CLEAR;
+    except
+      FObjErrorMsg := ERROR_CLEAR;
+      Result := SUS_CLEAR;
+    end;
+  end;
+end;
+
+procedure TDbObj.Commit_Sqlite;
+begin
+  Fsldb.Commit;
+end;
+
+constructor TDbObj.Create();
+begin
+  inherited;
+  FdbObj := TADOQuery.create(nil);
+  InitializeCriticalSection(FCS);
+  Ftlb := TSQLiteTable.Create;
+end;
+
+function TDbObj.CreateDbTable(tablename: string): integer;
+var
+  sSql: string;
+begin
+  sSql := 'CREATE TABLE' + tablename;
+  with FdbObj do
+  begin
+    SQL.Clear;
+    SQL.Add(sSql);
+    try
+      ExecSQL;
+      FObjErrorMsg := SUS_CREATE;
+      Result := SUS_CREATE;
+    except
+      FObjErrorMsg := ERROR_CREATE;
+      Result := ERROR_CREATE;
+    end;
+  end;
+end;
+
+function TDbObj.DeleteDbTable(tablename: string): integer;
+var
+  sSql: string;
+begin
+  sSql := 'Drop  table ' + tablename;
+  with FdbObj do
+  begin
+    Close;
+    SQL.Clear;
+    SQL.Add(sSql);
+    try
+      ExecSQL;
+      FObjErrorMsg := SUS_DELETE;
+      Result := SUS_DELETE;
+    except
+      FObjErrorMsg := ERROR_DELETE;
+      Result := SUS_DELETE;
+    end;
+  end;
+end;
+
+destructor TDbObj.Destroy;
+begin
+  if Assigned(FdbObj) then
+    FdbObj.Free;
+
+  if Assigned(Fsldb) then
+    Fsldb.Free;
+
+  inherited;
+end;
+
+function TDbObj.ExcuteSql_Sqlite(const sql: string): Integer;
+var
+  sqls: string;
+begin
+  try
+    Fsldb.ExecSQL(sql, []);
+  except
+
+  end;
+end;
+
+function TDbObj.GetdbObj: TADOQuery;
+begin
+  Result := FdbObj;
+
+end;
+
+function TDbObj.GetTable_Sqlite(const sql: string): Integer;
+begin
+  try
+    Ftlb := Fsldb.GetTable(sql, []);
+    Result := SUS_QUERY;
+  except
+    Result := ERROR_QUERY;
+  end;
+end;
+
+function TDbObj.GetTlb: TSQLiteTable;
+begin
+  Result := Ftlb;
+end;
+
+function TDbObj.InsertRecord(SQLString: string; tableName: string; insertContent: array of Variant): Integer;
+var
+  iString: string;
+  len, i: integer;
+begin
+  len := length(insertContent);
+  with FdbObj do
+  begin
+    Close;
+    SQL.Clear;
+    SQL.Add(SQLString);
+    for i := 0 to len - 1 do
+    begin
+      iString := inttostr(i);
+      Parameters.ParamByName(iString).Value := insertContent[i];
+    end;
+    try
+      ExecSQL;
+      FObjErrorMsg := SUS_INSERT;
+      Result := SUS_INSERT;
+    except
+      FObjErrorMsg := ERROR_INSERT;
+      Result := ERROR_INSERT;
+    end;
+  end;
+end;
+
+procedure TDbObj.lock;
+begin
+  EnterCriticalSection(FCS);
+end;
+
+function TDbObj.OpenDb(DbFilePath, DbType: string): integer;
+begin
+  if FdbObj.Active then
+  begin
+    FdbObj.Close;
+  end;
+  if not FileExists(DbFilePath) then
+  begin
+    Result := ERROR_NOTFILE;
+    Exit;
+  end;
+  if DbType = 'Access' then
+  begin
+    FdbObj.ConnectionString := 'Provider=Microsoft.Jet.OLEDB.4.0;Data Source=' + DbFilePath + ';Persist Security Info=False';
+    result := SUS_OPEN;
+  end
+  else if (DbType = 'SQLite') then
+  begin
+    if Assigned(Fsldb) then
+      Fsldb.Free;
+    try
+      Fsldb := TSQLiteDatabase.Create(DbFilePath);
+      result := SUS_OPEN;
+    except
+      result := ERROR_OPENFAIL;
+    end;
+  end;
+end;
+
+function TDbObj.QueryRecord(SQLString: string): Integer;
+begin
+  with FdbObj do
+  begin
+    Close;
+    SQL.Clear;
+    SQL.Add(SQLString);
+    try
+      open;
+      FObjErrorMsg := SUS_QUERY;
+      Result := SUS_QUERY
+    except
+      FObjErrorMsg := ERROR_QUERY;
+      Result := ERROR_QUERY;
+    end;
+  end;
+end;
+
+function TDbObj.QueryRecord_Sqlite(SQLString: string): Integer;
+begin
+
+end;
+
+procedure TDbObj.Rollback_Sqlite;
+begin
+  Fsldb.Rollback;
+end;
+
+procedure TDbObj.unlock;
+begin
+  LeaveCriticalSection(FCS);
+end;
+
+function TDbObj.UpdateDbRecord(SQLString: string): integer;
+begin
+  with FdbObj do
+  begin
+    Close;
+    SQL.Clear;
+    SQL.Add(SQLString);
+    try
+      ExecSQL;
+      FObjErrorMsg := SUS_UPDATE;
+      Result := SUS_UPDATE;
+    except
+      FObjErrorMsg := ERROR_UPDATE;
+      Result := SUS_UPDATE;
+    end;
+  end;
+end;
+
+end.
+

@@ -1,0 +1,139 @@
+object MainForm: TMainForm
+  Left = 384
+  Top = 369
+  BorderStyle = bsSingle
+  Caption = 'MainForm'
+  ClientHeight = 360
+  ClientWidth = 521
+  Color = clBtnFace
+  Font.Charset = GB2312_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -14
+  Font.Name = #23435#20307
+  Font.Style = []
+  OldCreateOrder = False
+  Position = poDesigned
+  OnClose = FormClose
+  OnCreate = FormCreate
+  OnShow = FormShow
+  PixelsPerInch = 96
+  TextHeight = 14
+  object Image8: TImage
+    Left = 0
+    Top = 0
+    Width = 521
+    Height = 33
+    Align = alTop
+    ParentShowHint = False
+    ShowHint = False
+    Stretch = True
+    ExplicitLeft = -1
+    ExplicitWidth = 278
+  end
+  object Label3: TLabel
+    Left = 168
+    Top = 8
+    Width = 73
+    Height = 25
+    AutoSize = False
+    Caption = #20027#30028#38754
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clWindow
+    Font.Height = -16
+    Font.Name = #24494#36719#38597#40657
+    Font.Style = []
+    ParentFont = False
+    Transparent = True
+  end
+  object StatusBar1: TStatusBar
+    Left = 0
+    Top = 341
+    Width = 521
+    Height = 19
+    Panels = <
+      item
+        Width = 50
+      end>
+    ExplicitTop = 324
+    ExplicitWidth = 477
+  end
+  object Memo1: TMemo
+    Left = 82
+    Top = 39
+    Width = 185
+    Height = 89
+    Lines.Strings = (
+      'Memo1')
+    TabOrder = 1
+  end
+  object RzDateTimePicker1: TRzDateTimePicker
+    Left = 40
+    Top = 215
+    Width = 236
+    Height = 21
+    Date = 42866.439341620360000000
+    Format = 'MMM dd, yyyy'
+    Time = 42866.439341620360000000
+    DateFormat = dfLong
+    TabOrder = 2
+  end
+  object RzDateTimePicker2: TRzDateTimePicker
+    Left = 40
+    Top = 255
+    Width = 236
+    Height = 21
+    Date = 42866.439432662040000000
+    Format = ''
+    Time = 42866.439432662040000000
+    TabOrder = 3
+  end
+  object Button1: TButton
+    Left = 82
+    Top = 160
+    Width = 75
+    Height = 25
+    Caption = #20572#27490
+    TabOrder = 4
+    OnClick = Button1Click
+  end
+  object Button2: TButton
+    Left = 192
+    Top = 160
+    Width = 75
+    Height = 25
+    Caption = #21551#21160
+    TabOrder = 5
+    OnClick = Button2Click
+  end
+  object Button3: TButton
+    Left = 344
+    Top = 208
+    Width = 75
+    Height = 25
+    Caption = #33719#21462#24212#29992#21517
+    TabOrder = 6
+    OnClick = Button3Click
+  end
+  object PopupMenu1: TPopupMenu
+    Top = 48
+    object N1: TMenuItem
+      Caption = #33756#21333
+      OnClick = N1Click
+    end
+    object N2: TMenuItem
+      Caption = #31105#29992
+      OnClick = N2Click
+    end
+    object N4: TMenuItem
+      Caption = #35774#32622
+    end
+    object N3: TMenuItem
+      Caption = #36864#20986
+      OnClick = N3Click
+    end
+  end
+  object FDConnection1: TFDConnection
+    Left = 336
+    Top = 128
+  end
+end

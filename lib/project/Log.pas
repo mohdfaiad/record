@@ -1,0 +1,505 @@
+unit Log;
+
+interface
+
+uses
+  Classes, windows, SysUtils, Dialogs;
+
+const
+  //level
+  OFFLOG = 2;   //关闭所有日志记录
+  FATALLOG = 3;  //导致程序退出的错误
+  ERROELOG = 4; //发生了错误但不影响系统运行
+  WARNLOG = 5;  //会出现潜在的错误情形
+  INFOLOG = 6;   //系统发生了那些事情
+  DEBUGLOG = 7; //调试程序有关的信息
+  ALLLOG = 8;  //输出所有日志记录
+  //logType
+  DEFLEALOG = 9; //只输出错误警告
+
+type
+  TLogBuffer = class
+  private
+    FMaxBufferSize: Int64;
+    ttencoding: tEncoding;
+    FC: TRTLCriticalSection;
+   // F : TSTREAM ;
+    FBuffer: string;
+    FBufferCount: Integer;
+    procedure SetBufferSize(value: int64);
+    function GetBufferSize(): int64;
+  public
+    constructor Create();
+    destructor Destroy; override;
+    procedure AppendBuffer(Data: string);
+    procedure ResetBuffer();
+    property BufferSize: Int64 read GetBufferSize;
+    property MaxBuffer: Int64 read FMaxBufferSize write SetBufferSize;
+    property Buf: string read FBuffer;
+  end;
+
+  TMyLog = class
+  private
+    FlogFileName: string;
+    FCSLock: TRTLCriticalSection; //临界区
+    FMaxLogSize: Int64;
+    FLogType: Integer;  // 2:all  3:hint  4: warming 5 error
+    FLogBuffer: TLogBuffer;
+    function GetFileSizeStr(fileName: string): string;
+  public
+    constructor Create(logFileName: string);
+    destructor Destroy; override;
+    procedure writeWorkLog(str: string; const Level: integer = INFOLOG);           //0 提示 -1 错误 1 警告
+    property LogMaxSize: Int64 read FMaxLogSize write FMaxLogSize;      // 日志文本最大值。
+    property LogType: Integer read FLogType write FLogType;
+  end;
+
+ { TAsynchronousLog }
+
+  TAsynchronousLog = class(TThread)
+  private
+    FLF: string; //#13#10;
+    FLogFileName: string;
+    FS: TFileStream;
+    FCurFileName: string;
+    FFileName: string;
+    FBegCount: DWord;
+    FBuffA, FBuffB: TMemoryStream;
+    FCS: TRTLCriticalSection;
+    FCS_FileName: TRTLCriticalSection;
+   // FMyLog: TMyLog;
+   // procedure WriteToFile();
+    function getLogFileName: string;
+    procedure setLogFileName(const Value: string);
+  protected
+    procedure Execute(); override;
+  public
+    constructor Create(LogFileName: string);
+    destructor Destroy(); override;
+    procedure WriteLog();
+  public
+    property FileName: string read getLogFileName write setLogFileName;
+    procedure StopLog();
+    procedure StarLog();
+//    procedure writeWorkLog(str: string; const Level: integer = 0);           //0 提示 -1 错误 1 警告
+  end;
+
+var
+  Mylog: TMyLog;
+ // AsynchronousLog: TAsynchronousLog;
+  myAsynchronousLog: TAsynchronousLog;
+  tstr: string;
+  count: Integer;
+
+implementation
+{ TLogBuffer }
+
+procedure TLogBuffer.AppendBuffer(Data: string);
+var
+  i: Integer;
+  tFbuffer: TStream;
+  LBytes: TBytes;
+begin
+ // txt := FBuffer.DataString;
+  if FBufferCount < MaxBuffer then
+  begin
+    if Data <> '' then
+    begin
+      Data := (Trim(Data) + #13#10);
+     // FBuffer.Position := 0;
+      FBuffer := FBuffer + Data;
+      Inc(FBufferCount);
+    end
+  end
+  else
+    ResetBuffer
+end;
+
+constructor TLogBuffer.Create;
+begin
+  FBuffer := '';
+  MaxBuffer := 1024;
+  FBufferCount := 0;
+end;
+
+destructor TLogBuffer.Destroy;
+begin
+  FBuffer := '';
+  inherited;
+end;
+
+function TLogBuffer.GetBufferSize: int64;
+begin
+  Result := FBufferCount;
+end;
+
+procedure TLogBuffer.ResetBuffer;
+begin
+  FBuffer := '';
+  FBufferCount := 0;
+end;
+
+procedure TLogBuffer.SetBufferSize(value: int64);
+begin
+  if value <> FMaxBufferSize then
+  begin
+    FMaxBufferSize := value;
+    MaxBuffer := value;
+
+  end;
+end;
+
+
+{ TMyLog }
+constructor TMyLog.Create(logFileName: string);
+begin
+  inherited Create();
+  FLogBuffer := TLogBuffer.Create;
+  InitializeCriticalSection(FCSLock);
+  FlogFileName := logFileName;
+  FLogType := DEFLEALOG;
+  FMaxLogSize := 10485760;
+end;
+
+destructor TMyLog.Destroy;
+begin
+  FLogBuffer.Destroy;
+  DeleteCriticalSection(FCSLock);
+  inherited;
+end;
+
+function TMyLog.GetFileSizeStr(fileName: string): string;
+var
+  FileHandle: integer;
+  nSize: Int64;
+begin
+  FileHandle := FileOpen(fileName, 0);
+  nSize := GetFileSize(FileHandle, nil);
+  if nSize > 1073741824 then
+    Result := FormatFloat('###,##0.00G', nSize / 1073741824)
+  else if nSize > 1048576 then
+    Result := FormatFloat('###,##0.00M', nSize / 1048576)
+  else if nSize > 1024 then
+    Result := FormatFloat('###,##00K', nSize / 1024)
+  else
+    Result := FormatFloat('###,#0B', nSize);
+  if Length(Result) > 2 then
+    if Result[1] = '0' then
+      Delete(Result, 1, 1);
+  FileClose(FileHandle);
+end;
+
+procedure TMyLog.writeWorkLog(str: string; const Level: integer);
+var
+  filev: TextFile;
+  ss, txt: string;
+  FS: TFileStream;
+  wTag: Boolean;
+begin
+  if (str = '') then
+    Exit;
+  if (LogType < 2) or (LogType > 9) or (Level < 2) or (Level > 9) then
+    Exit;
+  if (LogType = OFFLOG) then
+  begin
+    Exit;
+  end
+  else if (LogType = ALLLOG) then
+  begin
+
+  end
+  else if (LogType = INFOLOG) then
+  begin
+    if Level <> INFOLOG then
+      Exit;
+  end
+  else if (LogType = DEBUGLOG) then
+  begin
+    if (Level <> DEBUGLOG) then
+      Exit;
+  end
+  else if (LogType = WARNLOG) then
+  begin
+    if (Level <> WARNLOG) then
+      Exit;
+  end
+  else if (LogType = ERROELOG) then
+  begin
+    if (Level <> ERROELOG) then
+      Exit;
+  end
+  else if (LogType = DEFLEALOG) then
+  begin
+    if (Level = INFOLOG) then
+      Exit;
+  end;
+
+  if Level = INFOLOG then
+  begin
+    str := DateTimeToStr(Now) + ' Info ' + str;
+  end
+  else if (Level = DEBUGLOG) then
+  begin
+    str := DateTimeToStr(Now) + ' Debug ' + str;
+  end
+  else if (Level = WARNLOG) then
+  begin
+    str := DateTimeToStr(Now) + ' Warming ' + str;
+  end
+  else if (Level = ERROELOG) then
+  begin
+    str := DateTimeToStr(Now) + ' Error ' + str;
+  end
+  else if (Level = FATALLOG) then
+  begin
+    str := DateTimeToStr(Now) + ' Fail ' + str;
+  end;
+  str := Trim(str);
+ // EnterCriticalSection(FCSLOCK);
+ // try
+  FLogBuffer.AppendBuffer(str);
+  str := '';
+ // finally
+  //  LeaveCriticalSection(FCSLOCK);
+//  end
+  //
+   { if FLogBuffer.BufferSize < FLogBuffer.MaxBuffer then
+      FLogBuffer.AppendBuffer(str)
+    else
+    begin
+      try
+        ss := FlogFileName;
+        if FileExists(ss) then
+        begin
+          FS := TFileStream.Create(FlogFileName, fmShareDenyNone);
+          try
+            AssignFile(filev, ss);
+            append(filev);
+            txt := FLogBuffer.Buf.DataString;
+             // writeln(filev, str);
+            Writeln(filev, txt);
+             // Writeln(filev, FLogBuffer.Buf);
+            if FS.Size > FMaxLogSize then
+            begin
+              DeleteFile(FlogFileName);
+              ReWrite(filev);
+            end;
+          finally
+            FS.Free;
+          end;
+        end
+        else
+        begin
+          AssignFile(filev, ss);
+          ReWrite(filev);
+          writeln(filev, str);
+        end;
+      finally
+        CloseFile(filev);
+        FLogBuffer.ResetBuffer;
+      end;
+    end;
+     }
+
+
+end;
+
+{ TsfLog }
+
+constructor TAsynchronousLog.Create(LogFileName: string);
+begin
+  if Trim(LogFileName) = '' then
+    raise exception.Create('Log FileName not ""');
+  inherited Create(TRUE);
+//\\
+  InitializeCriticalSection(FCS); //初始化
+  InitializeCriticalSection(FCS_FileName); //日志文件名
+
+//队列缓冲区A,B运行的时候，交替使用
+  {Self.FBuffA := TMemoryStream.Create();
+  Self.FBuffA.Size := 1024 * 1024; //初始值可以根据需要自行调整
+  Self.FBuffB := TMemoryStream.Create();
+  Self.FBuffB.Size := 1024 * 1024; //初始值可以根据需要自行调整
+  Self.FLogBuff := Self.FBuffA;
+
+  if FileExists(LogFileName) then
+  begin
+    FS := TFileStream.Create(LogFileName, fmOpenWrite or fmShareDenyWrite);
+    FS.Position := FS.Size; //如果文件已经存在，数据进行追加
+  end
+  else
+    FS := TFileStream.Create(LogFileName, fmCreate or fmShareDenyWrite);
+  FCurFileName := LogFileName;
+  FFileName := LogFileName;
+  FLF := #13#10;  }
+  //FMyLog := TMyLog.Create(LogFileName);
+  FFileName := LogFileName;
+
+  StarLog;
+end;
+
+destructor TAsynchronousLog.Destroy;
+begin
+
+  if Mylog.FLogBuffer.FBuffer <> '' then
+    WriteLog;
+ // FMyLog.Free;
+  inherited;
+end;
+
+procedure TAsynchronousLog.Execute();
+begin
+  FBegCount := GetTickCount();
+  while (not Self.Terminated) do
+  begin
+    if Mylog.FLogBuffer.FBufferCount >= Mylog.FLogBuffer.FMaxBufferSize then
+    begin
+      WriteLog();
+    end
+    else
+    begin
+      Sleep(0);
+    end;
+
+  end;
+end;
+
+function TAsynchronousLog.getLogFileName: string;
+begin
+  EnterCriticalSection(FCS_FileName);
+  try
+    Result := FCurFileName;
+  finally
+    LeaveCriticalSection(FCS_FileName);
+  end;
+end;
+
+procedure TAsynchronousLog.setLogFileName(const Value: string);
+begin
+  EnterCriticalSection(FCS_FileName);
+  try
+    FFileName := Value;
+  finally
+    LeaveCriticalSection(FCS_FileName);
+  end;
+end;
+
+procedure TAsynchronousLog.StarLog;
+begin
+  Self.Resume();
+end;
+
+procedure TAsynchronousLog.StopLog;
+begin
+  Self.Suspend;
+end;
+
+procedure TAsynchronousLog.WriteLog();
+var
+  filev: TextFile;
+  ss, txt: string;
+  FS: TFileStream;
+  wTag: Boolean;
+begin
+
+  txt := Mylog.FLogBuffer.Buf;
+ // txt := tstr;
+  EnterCriticalSection(FCS);
+  try
+    try
+      ss := FFileName;
+      if FileExists(ss) then
+      begin
+        FS := TFileStream.Create(FFileName, fmShareDenyNone);
+        try
+          AssignFile(filev, ss);
+          append(filev);
+          Writeln(filev, txt);
+             // Writeln(filev, FLogBuffer.Buf);
+          if FS.Size > MyLog.FMaxLogSize then
+          begin
+            DeleteFile(FlogFileName);
+            ReWrite(filev);
+          end;
+        finally
+          FS.Free;
+        end;
+      end
+      else
+      begin
+        AssignFile(filev, ss);
+        ReWrite(filev);
+        writeln(filev, txt);
+      end;
+    finally
+      CloseFile(filev);
+      Mylog.FLogBuffer.ResetBuffer;
+    end;
+  finally
+    LeaveCriticalSection(FCS);
+  end;
+end;
+
+{procedure TAsynchronousLog.WriteToFile;
+var
+  MS: TMemoryStream;
+  IsLogFileNameChanged: Boolean;
+begin
+  EnterCriticalSection(FCS);
+//交换缓冲区
+  try
+    MS := nil;
+    if FLogBuff.Position > 0 then
+    begin
+      MS := FLogBuff;
+      if FLogBuff = FBuffA then
+        FLogBuff := FBuffB
+      else
+        FLogBuff := FBuffA;
+      FLogBuff.Position := 0;
+    end;
+  finally
+    LeaveCriticalSection(FCS);
+  end;
+//\\
+  if MS = nil then
+    Exit;
+
+//写入文件
+  try
+    FS.Write(MS.Memory^, MS.Position);
+  finally
+    MS.Position := 0;
+  end;
+
+//检测文件名称是否变化
+  EnterCriticalSection(FCS_FileName);
+  try
+    IsLogFileNameChanged := (FCurFileName <> FFileName);
+  finally
+    LeaveCriticalSection(FCS_FileName);
+  end;
+
+//日志文件名称修改了
+  if IsLogFileNameChanged then
+  begin
+    FCurFileName := FFileName;
+    FS.Free();
+    if FileExists(FFileName) then
+    begin
+      FS := TFileStream.Create(FFileName, fmOpenWrite or fmShareDenyWrite);
+      FS.Position := FS.Size;
+    end
+    else
+      FS := TFileStream.Create(FFileName, fmCreate or fmShareDenyWrite);
+  end;
+
+end;
+
+procedure TAsynchronousLog.writeWorkLog(str: string; const Level: integer);
+begin
+  FMyLog.writeWorkLog(str, Level);
+end;
+ }
+end.
+

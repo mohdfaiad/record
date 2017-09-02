@@ -1,0 +1,7 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+	<Transactions>
+    <Transaction>2017/05/06 08:44:38.207.pas,D:\work\windows\delphi\project\record\project\timeManager\Unit1.pas=D:\work\windows\delphi\project\record\project\timeManager\Form\TestForm.pas</Transaction>
+    <Transaction>2017/05/06 08:44:38.207.dfm,D:\work\windows\delphi\project\record\project\timeManager\Unit1.dfm=D:\work\windows\delphi\project\record\project\timeManager\Form\TestForm.dfm</Transaction>
+  </Transactions>
+</BorlandProject>

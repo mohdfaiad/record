@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+	<Transactions>
+    <Transaction>2017/04/17 11:18:35.715.pas,D:\work\windows\delphi\project\record\project\timeManager\Unit2.pas=D:\work\windows\delphi\project\record\project\timeManager\Form\uwpBasicFrm.pas</Transaction>
+    <Transaction>2017/04/17 11:18:35.715.dfm,D:\work\windows\delphi\project\record\project\timeManager\Unit2.dfm=D:\work\windows\delphi\project\record\project\timeManager\Form\uwpBasicFrm.dfm</Transaction>
+    <Transaction>2017/04/21 12:48:59.140.pas,D:\work\windows\delphi\project\record\project\timeManager\Form\uwpBasicFrm.pas=</Transaction>
+    <Transaction>2017/04/21 12:48:59.140.dfm,D:\work\windows\delphi\project\record\project\timeManager\Form\uwpBasicFrm.dfm=</Transaction>
+    <Transaction>2017/04/21 12:50:52.105.pas,D:\work\windows\delphi\project\record\project\timeManager\lib\project\uTask.pas=</Transaction>
+  </Transactions>
+</BorlandProject>

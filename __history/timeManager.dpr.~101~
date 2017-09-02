@@ -1,0 +1,52 @@
+program timeManager;
+
+uses
+  EMemLeaks,
+  EResLeaks,
+  EDialogWinAPIMSClassic,
+  EDialogWinAPIEurekaLogDetailed,
+  EDialogWinAPIStepsToReproduce,
+  EDebugExports,
+  EFixSafeCallException,
+  EMapWin32,
+  EAppVCL,
+  ExceptionLog7,
+  Windows,
+  Forms,
+  taskForms in 'Form\taskForms.pas' {createTaskForm},
+  ShowUnit in 'Form\ShowUnit.pas' {ShowForm},
+  remindBox in 'Form\remindBox.pas' {remainForm},
+  MainUnit in 'Form\MainUnit.pas' {MainForm},
+  uConst in 'lib\project\uConst.pas',
+  uRecord in 'lib\project\uRecord.pas',
+  recordVierFrm in 'Form\recordVierFrm.pas' {frmRecord},
+  uTask in 'lib\project\uTask.pas',
+  DbOperate in 'lib\project\DbOperate.pas',
+  uUwp in 'Form\uUwp.pas' {frmUwp},
+  uSort in 'lib\project\uSort.pas',
+  listviewBasic in 'Form\listviewBasic.pas' {frmLvsbic},
+  setRecord in 'Form\setRecord.pas' {frmSetClass},
+  dataBaseOperate in 'Form\dataBaseOperate.pas' {Form1},
+  CustomDrawDemoMain in 'Form\CustomDrawDemoMain.pas';
+
+{$R *.res}
+begin
+  CreateMutex(nil, True, 'timeManager-PC');
+  if GetLastError <> ERROR_ALREADY_EXISTS then
+ // if true then
+  begin
+    Application.Initialize;
+    ReportMemoryLeaksOnShutdown := true;
+    Application.MainFormOnTaskbar := True;
+    Application.ShowMainForm := False;
+    Application.CreateForm(TMainForm, MainForm);
+  Application.CreateForm(TShowForm, ShowForm);
+  Application.CreateForm(TfrmRecord, frmRecord);
+  Application.Run;
+  end
+  else
+  begin
+    Application.MessageBox('已经运行一个实例', '提示', MB_OK);
+  end;
+end.
+

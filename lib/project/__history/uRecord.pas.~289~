@@ -1,0 +1,945 @@
+unit uRecord;
+
+interface
+
+uses
+  Classes, Windows, DbOperate, uConst, oleacc, Variants, SysUtils, Messages,
+  dyKeyMouseHook, config, Log;
+
+const
+  ERROR_NOTFILE = -1001;
+
+type
+  TMyRecord = class
+  private
+    FDayDbObj: TDbObj;
+    FError: TError;
+    FBrowerList: TList;
+    FMsaaPause: Boolean;
+    FdayDbPath: string;
+    function GetCurrentUrl(processHandle: Integer; aProcessName: string): string;
+    function GetCurrentUrlNew(aPosition: Integer; aProcessRect: TRect): string;
+    function GetUlrRect(processRect: TRect): TPoint;
+    // 保存到数据库
+
+    procedure AddStarInternetRecord(guid, url, urlTitle: string);
+    procedure AddEndInternetRecord(guid: string);
+    procedure AddStarActiveRecord(aProcessTitle, aProcessname, guid: string);
+    procedure AddEndActiveRecord(guid: string);
+    function JudgeUseStatus(): Integer;         //判断用户活动键盘钩子
+    procedure AddStarValueTagRecord(guid: string);
+    procedure AddStopValueTagRecord(guid: string; valueTag: Integer);
+    procedure ClearList();
+   // procedure AddActiveRecord(Processname: string);
+  public
+    constructor Create(dayDbPath: string);
+    destructor Destroy();
+    procedure ClearError();
+    property DayDbObj: TDbObj read FDayDbObj;
+    procedure CloseConnect();
+    procedure OpenConnect();
+    function GetLastError(): TError;
+    //采集记录
+    function CollectActiveRecord(): integer;
+    function CollectValueRecord(): integer;
+    //
+    function SwitchDaySqlite(day: string; dayRecordDbPath: string): string;
+    function IsValueBrowser(const processName: string; var position: Integer): Boolean;
+  end;
+
+var
+  myRecord: TMyRecord;
+  processCount, lUserInfo: Integer; // 记录次数
+  searchCount: Integer;
+  Acc, accchild: IAccessible;
+  VarParent: variant;
+  res: hresult;
+  guidS, guidProcess, guidUrl, classPath, lastrecordTime, lastUrlTime, lastRecordInfo, lasturl, lProcessName: string;
+  valueTag: Boolean;
+  valueCount: Integer;
+  lastTime: Double;
+  valuetInterruptMin: Double;
+  valuetInterruptMax: Double;
+  lp: DWORD;  // 通用程序 pid
+  // test
+
+implementation
+//回调函数 遍历子窗口
+
+function EnumChildWindowsProc(hWnd: hWnd; lparam: lparam): Boolean; stdcall;
+var
+  pid, info: Cardinal;
+begin
+  lp := 0;
+  Result := False;
+  info := lparam;
+  pid := 0;
+  GetWindowThreadProcessId(hWnd, pid);
+  if (pid <> info) then
+  begin
+    lp := pid;
+    Exit;
+  end;
+  Result := TRUE;
+end;
+
+// mass
+
+function max(a, b: integer): integer;
+begin
+  if a > b then
+    result := a
+  else
+    result := b;
+end;
+
+function getAccstate(state: longint): string;
+var
+  n, i: longint;
+  r: array[0..255] of char;
+  s: string;
+begin
+  s := '';
+  n := 1;
+  for i := 1 to 29 do
+  begin
+    if state and n <> 0 then
+    begin
+      getstatetext(n, @r, 255);
+      if s <> '' then
+        s := s + ' -- ';
+      s := s + r;
+    end;
+    n := n * 2;
+  end;
+  result := s;
+end;
+
+function getAccrole(role: longint): string;
+var
+  r: array[0..255] of char;
+begin
+  getroletext(role, @r, 255);
+  result := r;
+end;
+
+function GetaccFocus(v: variant): string;
+begin
+  case vartype(v) of
+    VarEmpty:
+      result := 'Cet objet et ses enfants n''ont pas le focus clavier.';
+    VarInteger:
+      if v = CHILDID_SELF then
+        result := 'Cet object lui-m阭e a le focus clavier.'
+      else
+        result := 'L''enfant num閞o ' + inttostr(v) + 'a le focus clavier.';
+    VarDispatch:
+      result := 'Un enfant a le focus clavier (IDispatch)';
+  end;
+end;
+
+function GetaccSelection(v: variant): string;
+begin
+  case vartype(v) of
+    VarEmpty:
+      result := 'Cet objet ou ses enfants ne sont pas s閘ectionn閟.';
+    VarInteger:
+      if v = CHILDID_SELF then
+        result := 'Cet object lui-m阭e est s閘ectionn?'
+      else
+        result := 'L''enfant num閞o ' + inttostr(v) + 'est s閘ectionn?';
+    VarDispatch:
+      result := 'Un enfant est s閘ectionn?(IDispatch)';
+    VarUnknown:
+      result := 'Plusieurs enfants sont s閘ectionn閟 (IEnumVARIANT)';
+  end;
+end;
+
+function Getpropriete(Prop: integer; acc: IAccessible; varID: variant): string;
+var
+  str: pwidechar;
+  n: longint;
+  v: variant;
+begin
+  case Prop of
+    DISPID_ACC_NAME:
+      res := acc.get_accName(varID, str);
+    DISPID_ACC_VALUE:
+      res := acc.get_accValue(varID, str);
+    DISPID_ACC_DESCRIPTION:
+      res := acc.get_accDescription(varID, str);
+    DISPID_ACC_ROLE:
+      res := acc.get_accRole(varID, v);
+    DISPID_ACC_STATE:
+      res := acc.get_accState(varID, v);
+    DISPID_ACC_HELP:
+      res := acc.get_accHelp(varID, str);
+    DISPID_ACC_HELPTOPIC:
+      res := acc.get_accHelpTopic(str, varID, n);
+    DISPID_ACC_KEYBOARDSHORTCUT:
+      res := acc.get_accKeyboardShortcut(varID, str);
+    DISPID_ACC_FOCUS:
+      res := acc.get_accFocus(v);
+    DISPID_ACC_SELECTION:
+      res := acc.get_accSelection(v);
+    DISPID_ACC_DEFAULTACTION:
+      res := acc.get_accDefaultAction(varID, str);
+  end;
+  case res of
+    S_OK:
+      case Prop of
+        DISPID_ACC_NAME, DISPID_ACC_VALUE, DISPID_ACC_DESCRIPTION, DISPID_ACC_HELP, DISPID_ACC_HELPTOPIC, DISPID_ACC_KEYBOARDSHORTCUT, DISPID_ACC_DEFAULTACTION:
+          result := str;
+        DISPID_ACC_ROLE:
+          result := getaccrole(v);
+        DISPID_ACC_STATE:
+          result := getaccstate(v);
+        DISPID_ACC_FOCUS:
+          result := GetAccFocus(v);
+        DISPID_ACC_SELECTION:
+          result := GetaccSelection(v);
+      end;
+    S_FALSE:
+    //  result := 'Vide [FALSE]';
+      Result := '';
+    E_INVALIDARG:
+    //  result := 'Erreur Argument';
+      result := '';
+    DISP_E_MEMBERNOTFOUND:
+    //  result := 'l''objet ne supporte pas cette propri閠?;
+      result := '';
+  else
+    result := 'Erreur inconnue';
+  end;
+end;
+
+function GetName(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_NAME, acc, varID);
+end;
+
+function GetValue(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_VALUE, acc, varID);
+end;
+
+function GetDescription(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_DESCRIPTION, acc, varID);
+end;
+
+function GetRole(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_ROLE, acc, varID);
+end;
+
+function GetState(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_STATE, acc, varID);
+end;
+
+function GetHelp(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_HELP, acc, varID);
+end;
+
+function GetHelpTopic(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_HELPTOPIC, acc, varID);
+end;
+
+function GetKeyShortCut(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_KEYBOARDSHORTCUT, acc, varID);
+end;
+
+function GetFocus(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_FOCUS, acc, varID);
+end;
+
+function GetSelection(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_SELECTION, acc, varID);
+end;
+
+function GetDefaultAction(acc: IAccessible; varID: variant): string;
+begin
+  result := Getpropriete(DISPID_ACC_DEFAULTACTION, acc, varID);
+end;
+{ TMyRecord }
+
+function TMyRecord.IsValueBrowser(const processName: string; var position: Integer): Boolean;
+var
+  I, len: Integer;   // loops thru known protocols
+  Protocols: array of string;
+  PBrowser: ^TBrowser;
+begin
+  Result := False;
+  len := FBrowerList.Count;
+  SetLength(Protocols, len);
+  for I := 0 to len - 1 do
+  begin
+    PBrowser := FBrowerList.Items[I];
+    Protocols[I] := PBrowser.browserName;
+  end;
+  for I := Low(Protocols) to High(Protocols) do
+    if Pos(Protocols[I], SysUtils.LowerCase(processName)) = 1 then
+    begin
+      position := I;
+      Result := True;
+      Exit;
+    end;
+end;
+
+function TMyRecord.GetUlrRect(processRect: TRect): TPoint;
+var
+  url: string;
+  tmrect: TRect;
+  x, y, w, h, i: longint;
+  pt: TPoint;
+  theight: Integer;
+begin
+  tmrect.left := processRect.Left;
+  tmrect.top := processRect.Top;
+  pt.X := processRect.Left;
+  pt.y := processRect.Top;
+  theight := processRect.Top + (processRect.Bottom - processRect.Top) div 6;
+  while not IsValidURLProtocol(url) do
+  begin
+    if (tmrect.top > theight) then
+    begin
+      Result.x := -1;
+      Result.y := -1;
+      exit;
+    end;
+    try
+      res := AccessibleObjectFrompoint(pt, @acc, VarParent);
+    except
+      url := '';
+    end;
+    if res <> S_OK then
+      Continue;
+    try
+      url := getvalue(acc, VarParent);
+      if tmrect.Left < processRect.Right then
+      begin
+        tmrect.Left := tmrect.Left + 20;
+      end
+      else
+      begin
+        if tmrect.top < theight then
+        begin
+          tmrect.top := tmrect.top + 10;
+          tmrect.Left := processRect.Left;
+        end;
+      end;
+      pt.X := tmrect.left;
+      pt.y := tmrect.top;
+    except
+      url := '';
+    end;
+
+  end;
+  Result.x := pt.X;
+  Result.y := pt.Y;
+end;
+
+procedure TMyRecord.ClearError;
+var
+  sql: string;
+begin
+  sql := 'delete  from  valuetime_record where value_tag = 0 ';
+  try
+    if not Assigned(FDayDbObj) then
+    begin
+      FDayDbObj := TDbObj.Create;
+      FDayDbObj.OpenDb(FdayDbPath, 'SQLite', '');
+    end;
+    FDayDbObj.Commit;
+    FDayDbObj.ExcuteSql(sql);
+    sql := 'delete  from  pc_process_record where record_endtime is null';
+    FDayDbObj.ExcuteSql(sql);
+    sql := 'delete  from  internet_record where record_endtime is null';
+    FDayDbObj.ExcuteSql(sql);
+  except
+
+  end;
+end;
+
+procedure TMyRecord.ClearList;
+var
+  i, count: Integer;
+begin
+  count := FBrowerList.Count;
+  for i := 0 to count - 1 do
+    Dispose(PBrowser(FBrowerList[i]));
+  FBrowerList.Clear;
+end;
+
+procedure TMyRecord.CloseConnect;
+begin
+
+end;
+
+function TMyRecord.CollectActiveRecord: integer;
+var
+  activeFormHandle: hWnd;
+  buf: array[0..254] of Char;
+  dwProcessID: DWORD;
+  processName: ^string;
+  Caption, temps, aProcessName: string;
+  sonhandle: hWnd;
+  ps: array[0..50] of Char;
+  timeout: Integer;
+  proStatus: Cardinal;
+  error, count, len: Integer;
+  activeFormRect: TRect;
+  curentUrl, processTitle: string;
+  postition: Integer;
+begin
+  processTitle := '';
+  FDayDbObj.ShareConnectTab := 1;
+  postition := 0;
+  Mylog.writeWorkLog('获取当前系统活动进程');
+  activeFormHandle := GetForegroundWindow;
+  GetWindowRect(activeFormHandle, activeFormRect);
+  proStatus := 0;
+  FillChar(buf, SizeOf(buf), #0);
+
+  SendMessage(activeFormHandle, WM_GETTEXT, 256, Longint(@buf[0]));
+  if (buf <> '') then
+  begin
+
+    processTitle := string(buf);
+    GetWindowThreadProcessId(activeFormHandle, dwProcessID);
+    aProcessName := GetPidtoName(dwProcessID);
+    
+    //uwp通用进程枚举父窗口
+    if aProcessName = 'ApplicationFrameHost.exe' then
+    begin
+      Mylog.writeWorkLog('获取通用进程活动进程');
+      EnumChildWindows(activeFormHandle, @EnumChildWindowsProc, dwProcessID);
+      if lp = 0 then
+        Exit;
+      aProcessName := GetPidtoName(lp);
+    end;
+
+    if aProcessName = '' then
+      Exit;
+    inc(processCount);
+    if processCount > 500 then
+    begin
+      processCount := 1;
+      FDayDbObj.Commit;
+      FDayDbObj.BeginTans;
+      Mylog.writeWorkLog('插入活动记录到数据库', HintLevel);
+    end;
+    //浏览器处理
+    if IsValueBrowser(aProcessName, postition) then
+    begin
+      GetWindowRect(activeFormHandle, activeFormRect);
+      Mylog.writeWorkLog('获取当前活动url');
+      curentUrl := GetCurrentUrlNew(postition, activeFormRect);
+      if curentUrl <> '' then
+      begin
+        if curentUrl <> lasturl then
+        begin
+          if guidUrl <> '' then
+          begin
+            Mylog.writeWorkLog('更新上次记录url');
+            AddEndInternetRecord(guidUrl);
+
+            guidUrl := '';
+          end;
+          guidUrl := GetGUID();
+          SendMessage(activeFormHandle, WM_GETTEXT, 256, Longint(@buf[0]));
+          processTitle := string(buf);
+          Mylog.writeWorkLog('插入当前记录url');
+          if IsUrl(curentUrl) then
+            AddStarInternetRecord(guidUrl, curentUrl, processTitle)
+          else
+          begin
+            curentUrl := '';
+            guidUrl := '';
+            processTitle := '';
+          end;
+        end;
+      end;
+      lasturl := curentUrl;
+      if curentUrl <> '' then
+        Mylog.writeWorkLog('当前url: ' + curentUrl);
+    end;
+    if (aProcessName <> lProcessName) then
+    begin
+      if guidProcess <> '' then
+      begin
+        Mylog.writeWorkLog('更新上次记录进程');
+        AddEndActiveRecord(guidProcess);
+        guidProcess := '';
+      end;
+      guidProcess := GetGUID();
+      Mylog.writeWorkLog('插入当前记录进程');
+      AddStarActiveRecord(processTitle, aProcessName, guidProcess);
+      if aProcessName <> '' then
+
+    end;
+    lProcessName := aProcessName;
+  end;
+  if aProcessName <> '' then
+    Mylog.writeWorkLog('当前进程' + aProcessName);
+  result := 0;
+  FError.errorCode := 0;
+
+end;
+
+function TMyRecord.CollectValueRecord: integer;
+var
+  UserInfo: Integer;
+begin
+
+  FDayDbObj.ShareConnectTab := 2;
+  valueTag := false;
+  UserInfo := 0;
+  UserInfo := JudgeUseStatus;
+  if guidS <> '' then
+  begin
+    AddStopValueTagRecord(guidS, UserInfo);
+    guidS := '';
+    SetShareCount;
+  end;
+  guidS := GetGUID();                                                            //获得guid
+  AddStarValueTagRecord(guidS);
+  lUserInfo := UserInfo;
+
+end;
+
+function TMyRecord.GetCurrentUrl(processHandle: Integer; aProcessName: string): string;
+var
+  res: hresult;
+  url: string;
+  tpt: tpoint;
+  activeFormRect: TRect;
+  tWidth: Integer;
+begin
+  url := '';
+  GetWindowRect(processHandle, activeFormRect);
+  //谷歌
+  if aProcessName = 'chrome.exe' then
+  begin
+    tpt.X := activeFormRect.Left + 160;
+    tpt.y := activeFormRect.Top + 54;
+  end
+  // 火狐
+  else if (aProcessName = 'firefox.exe') then
+  begin
+    tWidth := (activeFormRect.Right - activeFormRect.Left) div 3 - 10;
+    tpt.X := activeFormRect.Left + tWidth;
+    tpt.y := activeFormRect.Top + 58;
+  end
+  //ie
+  else if (aProcessName = 'iexplore.exe') then
+  begin
+    tpt.X := activeFormRect.Left + 105;
+    tpt.y := activeFormRect.Top + 31;
+  end
+  else
+  begin
+    Exit;
+  end;
+  res := AccessibleObjectFrompoint(tpt, @acc, VarParent);
+  if res <> S_OK then
+    exit;
+  url := getvalue(acc, VarParent);
+  if IsValidURLProtocol(url) then
+  begin
+
+  end;
+
+  Result := url;
+end;
+
+function TMyRecord.GetCurrentUrlNew(aPosition: Integer; aProcessRect: TRect): string;
+var
+  res: hresult;
+  url: string;
+  tpt: tpoint;
+  activeFormRect: TRect;
+  tWidth: Integer;
+  ptBrowser: PBrowser;
+  activeFormHandle: THandle;
+begin
+  url := '';
+  ptBrowser := FBrowerList.Items[aPosition];
+  if PBrowser(FBrowerList.Items[aPosition]).status = 1 then
+  begin
+    tpt.X := aProcessRect.Left + PBrowser(FBrowerList.Items[aPosition]).bPt.x;
+    tpt.y := aProcessRect.Top + PBrowser(FBrowerList.Items[aPosition]).bPt.y;
+  end
+  else if PBrowser(FBrowerList.Items[aPosition]).status = 0 then
+  begin
+    Mylog.writeWorkLog('search tpt');
+   // tpt := GetUlrRect(aProcessRect);
+    if tpt.X = -1 then
+    begin
+      PBrowser(FBrowerList.Items[aPosition]).status := -1;
+      url := '';
+      //log
+      Exit;
+    end;
+    //PBrowser(FBrowerList.Items[aPosition]).bPt.x := tpt.X - aProcessRect.Left;
+    //PBrowser(FBrowerList.Items[aPosition]).bPt.y := tpt.y - aProcessRect.Top;
+  end
+  else
+  begin
+    url := '';
+    if searchCount > 120 then
+    begin
+      PBrowser(FBrowerList.Items[aPosition]).status := 0;
+      searchCount := 0;
+    end;
+    inc(searchCount);
+    Exit;
+  end;
+  //activeFormHandle := GetForegroundWindow;
+ // GetWindowRect(activeFormHandle, activeFormRect);
+  //tpt.X := activeFormRect.Left + 220;
+ // tpt.y := activeFormRect.Top + 54;
+ // try
+  res := AccessibleObjectFrompoint(tpt, @acc, VarParent);
+  if res <> S_OK then
+  begin
+    Result := url;
+    exit;
+  end;
+  url := getvalue(acc, VarParent);
+  //except
+
+ // end;
+  {if not IsValidURLProtocol(url) then
+  if ChecekUrl(url) then
+  begin
+    PBrowser(FBrowerList.Items[aPosition]).status := 0;
+  end;
+   }
+  Result := url;
+end;
+
+function TMyRecord.GetLastError: TError;
+begin
+  Result := FError;
+end;
+
+function TMyRecord.JudgeUseStatus: Integer;
+var
+  i, count: Integer;
+  myMsg: Integer;
+  key: Char;
+  ps: TPoint;
+begin
+  //鼠标钩子
+  valueTag := False;
+  Result := -1;
+  count := GetMouseCount - 1;
+  for i := 0 to count do
+  begin
+    ps.X := GetMouse(i).pt.x;
+    ps.Y := GetMouse(i).pt.y;
+    myMsg := GetMessageMsg(i);
+    case myMsg of
+      WM_LBUTTONDOWN:
+        begin
+          Result := myMsg;
+          valueTag := True;
+          Exit;
+        end;
+      WM_LBUTTONDBLCLK:
+        begin
+          valueTag := True;
+          Result := myMsg;
+
+          Exit;
+        end;
+      WM_RBUTTONDOWN:
+        begin
+          valueTag := True;
+          Result := myMsg;
+
+          Exit;
+        end;
+      WM_RBUTTONDBLCLK:
+        begin
+          valueTag := True;
+          Result := myMsg;
+
+          Exit;
+        end;
+      WM_MBUTTONDOWN:
+        begin
+          valueTag := True;
+          Result := myMsg;
+
+        end;
+      WM_MBUTTONDBLCLK:
+        begin
+          valueTag := True;
+          Result := myMsg;
+
+          Exit;
+        end;
+      //滚轮
+      WM_MOUSEWHEEL:
+        begin
+          valueTag := True;
+          Result := myMsg;
+          Exit;
+        end;
+    end;
+  end;
+  count := GetKeyCount - 1;
+  for i := 0 to count do
+  begin
+    key := GetKey(i);
+    if key <> '' then
+    begin
+      valueTag := True;
+      Result := 2;
+      Exit;
+    end;
+  end;
+
+end;
+
+procedure TMyRecord.OpenConnect;
+begin
+  FDayDbObj.OpenConnect;
+end;
+
+function TMyRecord.SwitchDaySqlite(day: string; dayRecordDbPath: string): string;
+const
+  fmtUpt = 'update mydb_info set tableStatus = %d  where dbPath = ''%s''';
+var
+  tDDay: Double;
+  tsDay, sql, templatesDir: string;
+  tMagerDbobj: tdbobj;
+begin
+  templatesDir := gMm.AppDir + '\templates';
+  //daySqlite
+  tsDay := StringReplace(ExtractFileName(dayRecordDbPath), '.db', '', [rfReplaceAll]);
+  dayRecordDbPath := StringReplace(dayRecordDbPath, tsDay, day, [rfReplaceAll]);
+  if not FileExists(dayRecordDbPath) then
+  begin
+    CopyFile(PChar(templatesDir + '\date.db'), PChar(dayRecordDbPath), False);
+  end;
+  FDayDbObj.Commit;
+  FDayDbObj.OpenDb(dayRecordDbPath, 'SQLite', '');
+  FDayDbObj.BeginTans;
+  Result := dayRecordDbPath;
+
+end;
+
+procedure TMyRecord.AddEndActiveRecord(guid: string);
+const
+  fmtInsert = 'update  pc_process_record    (''action_process'',''record_time'' ) VALUES(''%s'',''%s'')';
+var
+  sqlS: string;
+  error: Integer;
+  tTime: string;
+begin
+  tTime := FormatDateTime('YYYY-MM-DD HH:MM:SS', now);
+  sqlS := 'update pc_process_record set record_endtime =''' + tTime + ''' where guids =''' + guid + '''';
+  try
+    FDayDbObj.ExcuteSql(sqlS);
+  except
+    Mylog.writeWorkLog(Format('execute sql fail %s,errorCode %d', [sqlS, FDayDbObj.GetLastError.errorCode]), -1);
+  end;
+end;
+
+procedure TMyRecord.AddEndInternetRecord(guid: string);
+var
+  sqlS: string;
+  error: Integer;
+  tTime: string;
+begin
+  tTime := FormatDateTime('YYYY-MM-DD HH:MM:SS', now);
+  sqlS := 'update internet_record set record_endtime =''' + tTime + ''' where guids =''' + guid + '''';
+  try
+    FDayDbObj.ExcuteSql(sqlS);
+  except
+    Mylog.writeWorkLog(Format('execute sql fail %s,errorCode %d', [sqlS, FDayDbObj.GetLastError.errorCode]), -1);
+  end;
+end;
+
+procedure TMyRecord.AddStarActiveRecord(aProcessTitle, aProcessname, guid: string);
+const
+  fmtInsert = 'INSERT INTO pc_process_record (''guids'',''action_process'',''record_startime'' ) VALUES(''%s'',''%s'',''%s'')';
+var
+  s: string;
+  tTime: string;
+  error: Integer;
+begin
+  tTime := FormatDateTime('YYYY-MM-DD HH:MM:SS', now);
+  s := Format(fmtInsert, [guid, aProcessname, tTime]);
+  try
+    FDayDbObj.ExcuteSql(s);
+  except
+    Mylog.writeWorkLog(Format('execute sql fail %s,errorCode %d', [s, FDayDbObj.GetLastError.errorCode]), -1);
+  end;
+end;
+
+procedure TMyRecord.AddStarInternetRecord(guid, url, urlTitle: string);
+const
+  fmtInsert = 'INSERT INTO internet_record (''guids'',''url'',''url_title'',''record_startime'' ) VALUES(''%s'',''%s'',''%s'',''%s'')';
+var
+  sqlS: string;
+  error: Integer;
+  starT, cost: Integer;
+  tTime: string;
+begin
+
+  tTime := FormatDateTime('YYYY-MM-DD HH:MM:SS', now);
+  begin
+    sqlS := Format(fmtInsert, [guid, (url), urlTitle, tTime]);
+    try
+      starT := GetTickCount;
+      FDayDbObj.ExcuteSql(sqlS);
+      cost := GetTickCount - starT;
+    except
+      FError := FDayDbObj.GetLastError;
+      Mylog.writeWorkLog(Format('execute sql fail %s,errorCode %d', [sqlS, FError.errorCode]), -1);
+    end;
+  end;
+end;
+
+procedure TMyRecord.AddStarValueTagRecord(guid: string);
+const
+  fmtInsert = 'INSERT INTO valuetime_record (''guids'',''star_time'' ) VALUES(''%s'',''%s'')';
+var
+  s: string;
+  tTime: string;
+  error: Integer;
+begin
+  tTime := FormatDateTime('YYYY-MM-DD HH:MM:SS', now);
+  s := Format(fmtInsert, [guid, tTime]);
+  try
+    FDayDbObj.ExcuteSql(s);
+   // FValueObj.ExcuteSql(s);
+    lastTime := Now;
+  except
+    FError := FDayDbObj.GetLastError;
+    Mylog.writeWorkLog(Format('execute sql fail %s,errorCode %d', [s, FDayDbObj.GetLastError.errorCode]), -1);
+  end;
+end;
+
+procedure TMyRecord.AddStopValueTagRecord(guid: string; valueTag: Integer);
+const
+  fmtInsert = 'INSERT INTO pc_process_record (''action_process'',''record_time'' ) VALUES(''%s'',''%s'')';
+var
+  sqlS: string;
+  error: Integer;
+  tTime: string;
+  interrupt: Double;
+begin
+
+  interrupt := now - lastTime;
+  if (interrupt < valuetInterruptMin) or (interrupt > valuetInterruptMax) then
+  begin
+    Exit;
+  end;
+  tTime := FormatDateTime('YYYY-MM-DD HH:MM:SS', now);
+  sqlS := 'update valuetime_record set stop_time =''' + tTime + ''', value_tag = ' + IntToStr(valueTag) + ' where guids =''' + guid + '''';
+  try
+    FDayDbObj.ExcuteSql(sqlS);
+    //FValueObj.ExcuteSql(sqlS);
+  except
+    FError := FDayDbObj.GetLastError;
+    Mylog.writeWorkLog(Format('pc_process_record数据库插入失败, sql：%s, 错误代码：%d ', [sqlS, FDayDbObj.GetLastError.errorCode]), -1);
+  end;
+end;
+{
+procedure TMyRecord.AddActiveRecord(Processname: string);
+const
+  fmtInsert = 'INSERT INTO pc_process_record (''action_process'',''record_time'' ) VALUES(''%s'',''%s'')';
+var
+  sqlS: string;
+  error: Integer;
+  starT, cost: Integer;
+  tTime: string;
+begin
+  tTime := FormatDateTime('YYYY-MM-DD HH:MM:SS', now);
+  sqlS := Format(fmtInsert, [Processname, tTime]);
+  try
+    starT := GetTickCount;
+    FDayDbObj.ExcuteSql(sqlS);
+    cost := GetTickCount - starT;
+  except
+    FError := FDayDbObj.GetLastError;
+    Mylog.writeWorkLog(Format('execute sql fail %s,errorCode %d', [sqlS, FDayDbObj.GetLastError.errorCode]), -1);
+  end;
+end;
+ }
+
+constructor TMyRecord.Create(dayDbPath: string);
+var
+  PBrowserInfo: ^TBrowser;
+begin
+  FDayDbObj := TDbObj.Create;
+  if dayDbPath <> '' then
+    FdayDbPath := dayDbPath
+  else
+  begin
+    FError.errorCode := ERROR_NOTFILE;
+    FError.errorMsg := 'not file';
+    Exit;
+  end;
+  FDayDbObj.OpenDb(FdayDbPath, 'SQLite', '');
+  ClearError;
+  FDayDbObj.BeginTans;
+  FBrowerList := TList.Create;
+  New(PBrowserInfo);
+  PBrowserInfo.browserName := 'chrome.exe';
+  PBrowserInfo.bPt.x := 220;
+  PBrowserInfo.bPt.y := 54;
+  PBrowserInfo.status := 1;
+  FBrowerList.Add(PBrowserInfo);
+  New(PBrowserInfo);
+  PBrowserInfo.browserName := 'firefox.exe';
+  PBrowserInfo.bPt.x := 0;
+  PBrowserInfo.bPt.y := 0;
+  PBrowserInfo.status := 0;
+  FBrowerList.Add(PBrowserInfo);
+  New(PBrowserInfo);
+  PBrowserInfo.browserName := 'iexplore.exe';
+  PBrowserInfo.bPt.x := 140;
+  PBrowserInfo.bPt.y := 40;
+  PBrowserInfo.status := 1;
+  FBrowerList.Add(PBrowserInfo);
+  searchCount := 0;
+  valueCount := 0;
+  valuetInterruptMin := VarToDateTime('00:00:10');
+  valuetInterruptMax := VarToDateTime('00:30:00');
+end;
+
+destructor TMyRecord.Destroy;
+begin
+  {if guidProcess <> '' then
+  begin
+   // AddEndActiveRecord(guidProcess);
+  end;
+  if guidUrl <> '' then
+  begin
+   // AddEndinternetRecord(guidUrl);
+  end;
+  if guidS <> '' then
+  begin
+    //AddStopValueTagRecord(guidS, lUserInfo);
+  end; }
+  ClearList;
+  FBrowerList.Free;
+  FDayDbObj.Commit;
+  FDayDbObj.Free;
+ // FValueObj.Commit;
+end;
+
+end.
+

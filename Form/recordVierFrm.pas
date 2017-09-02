@@ -1,0 +1,1373 @@
+unit recordVierFrm;
+
+interface
+
+uses
+  Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
+  Dialogs, StdCtrls, DB, ADODB, Menus, ComCtrls, ExtCtrls, ShellAPI, jpeg, uTask,
+  uConst, TeeGDIPlus, TeEngine, Series, TeeProcs, Chart, uUwp, ImgList,
+  cxGraphics, cxControls, cxLookAndFeels, cxLookAndFeelPainters, cxSplitter,
+  RzDTP, RzListVw, Mask, dxGDIPlusClasses, TeeTools, TeePageNumTool, setRecord;
+
+const
+  MaxColumns = 3;
+  MAX_X_VALUE = 27;
+  MAX_Y_VALUE = 300;
+  ONE_INITAL_VALUE = 300;
+  TWO_INITAL_VALUE = 200;
+  // 時間初始賦值
+  StartHour = 9;
+  // 值振幅
+  VALUE_AMPLITUDE = 0.005;
+
+type
+  TfrmRecord = class(TfrmUwp)
+    edtList: TEdit;
+    listview: TListView;
+    cxspltr: TcxSplitter;
+    pnlalClient: TPanel;
+    pnlalLeft: TPanel;
+    Memo1: TMemo;
+    pnlQuery: TPanel;
+    Label1: TLabel;
+    Label2: TLabel;
+    Label4: TLabel;
+    Label5: TLabel;
+    pnlMenuMain: TPanel;
+    Label6: TLabel;
+    Label3: TLabel;
+    Label9: TLabel;
+    pnlMainListPage: TPanel;
+    lvProcess: TRzListView;
+    pnlManiViewPage: TPanel;
+    pnlHistogram: TPanel;
+    chtBar: TChart;
+    pnlPie: TPanel;
+    recordChart: TChart;
+    psrsRecord: TPieSeries;
+    cxSplitter1: TcxSplitter;
+    RzDateTimePicker1: TRzDateTimePicker;
+    RzDateTimePicker2: TRzDateTimePicker;
+    barSeries2: TBarSeries;
+    imgQuery: TImage;
+    ChartTool1: TPageNumTool;
+    pnlMainTop: TPanel;
+    pnlMainBottom: TPanel;
+    imgForward: TImage;
+    imgBack: TImage;
+    lblMainTitle: TLabel;
+    ComboBox1: TComboBox;
+    img11: TImage;
+    Image1: TImage;
+    pmSetMenu: TPopupMenu;
+    N1: TMenuItem;
+    procedure ListViewCustomDrawItem(Sender: TCustomListView; Item: TListItem; State: TCustomDrawState; var DefaultDraw: Boolean);
+    procedure edtListChange(Sender: TObject);
+    procedure ListViewColumnClick(Sender: TObject; Column: TListColumn);
+    procedure FormShow(Sender: TObject);
+    procedure ListViewMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+    procedure FormCreate(Sender: TObject);
+    procedure pngCloseClick(Sender: TObject);
+    procedure lvProcessColumnClick(Sender: TObject; Column: TListColumn);
+    procedure ListViewData(Sender: TObject; Item: TListItem);
+    procedure lvProcessClick(Sender: TObject);
+    procedure btnMenuQueryClick(Sender: TObject);
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure ListViewClick(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+    procedure btnPnlTopRefreshClick(Sender: TObject);
+    procedure btnPnlTopBackClick(Sender: TObject);
+    procedure btnNoteClick(Sender: TObject);
+    procedure btnRuleClick(Sender: TObject);
+    procedure chtBarGetAxisLabel(Sender: TChartAxis; Series: TChartSeries; ValueIndex: Integer; var LabelText: string);
+    procedure imgQueryClick(Sender: TObject);
+    procedure imgForwardClick(Sender: TObject);
+    procedure imgBackClick(Sender: TObject);
+    procedure ComboBox1Change(Sender: TObject);
+    procedure img11Click(Sender: TObject);
+    procedure lvProcessMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+    procedure Image1Click(Sender: TObject);
+    procedure N1Click(Sender: TObject);
+    procedure lvProcessDblClick(Sender: TObject);
+  private
+    { Private declarations }
+    FListViewWndProc1: TWndMethod;
+    FClassRecord: TStringList;
+    FRecordList: TList;
+    FHistoryStep: TList;
+   // FProcessList: TList;
+    processList: TStringList;
+    FPageTag: integer;
+    reInfo: TArrRecordtyInfo;
+    procedure ListViewWndProc1(var Msg: TMessage);
+    procedure GetUrl(var recordInfoList: TRecordInfo);
+    procedure UpdateItem;
+    function CheckSameLvsCaption(itemName: string): Boolean;
+    procedure AddRecordListview(reInfo: TArrRecordtyInfo);
+    procedure AddRecordLvProcess(reInfo: TArrRecordtyInfo);
+    // view
+    procedure ShowRecordView(starDate, endDate: Double);
+    procedure ShowRecordListview(reInfo: TArrRecordtyInfo);
+   // procedure ChartView();
+    procedure TodayRecord;
+    procedure GetDayRecord(starDate, endDate: Double);
+    function SelectRecordInfo(selectCondition: string; reInfo: TArrRecordtyInfo): Integer;
+    procedure ClearList();
+    function FListToArr(sList: TList): TArrRecordtyInfo;
+    function FArrToList(sArr: TArrRecordtyInfo): Integer;
+    function ListviewSelectIndex(sStarTime, sEndTime: string): Integer;
+    procedure FilterRecordList(processList: TStringList; var dArr: TArrRecordtyInfo; sFilterWord: string);
+
+    //draw view
+    procedure DrawRecordView(startime, endtime: Double);
+    procedure DrawRecordBar(const viewType: Integer = 0);
+    procedure ListViewAdaptColumns(const listive: TRzListView; const pnlWidth: Integer);
+    procedure SetClassRecord();
+  public
+    { Public declarations }
+    procedure AddConsumelist(columnsTitle, total, goodsList, recordDate, guidS: string); // list consume
+    procedure AddConsumelist_Title(colnumsList: array of string); // listview 标题头
+    procedure AddConsumelist_Content(item: TListItem; itemContent: TStringList); // listview 内容
+    procedure AddComsumelvlist(recordInfo: TRecordInfo);
+    procedure FormInit();
+  end;
+
+  TGrounp = record
+    grounpId: Integer;
+    costTime: Integer;
+    ruleType: Integer;
+  end;
+
+var
+  frmRecord: TfrmRecord;
+  edtcol: integer; //记录EDIT1在Columns中的位置,1-  MaxColumns;
+  editem: Tlistitem;
+  errorAccount: Integer;
+  recordInfoList: TRecordInfo;
+  lastExe, lastStarTime, lastEndTime: string;
+  XTemp: Integer;
+  YTemp1, YTemp2: Double;
+  ICount: Integer;
+  StrTime: string;
+  classType: TArrRecordInfo;
+
+function Sort(var pData: TList; sortType, sortCondition: Integer): Integer;
+
+function CustomSortProc(Item1, Item2: TListItem; ColumnIndex: integer): integer; stdcall;
+
+implementation
+
+
+
+
+{$R *.dfm}
+function Sort(var pData: TList; sortType, sortCondition: Integer): Integer;
+var
+  l, r, cost, star: Integer;
+  sMsg: string;
+
+  function GetSortCondition(sorCondition: Integer; recordInfo: TRecordtyInfo): Double;
+  var
+    sTemp: Char;
+    ordChar: Integer;
+  begin
+    if sortCondition = 0 then
+    begin
+      if recordInfo.recordName <> '' then
+      begin
+        sTemp := recordInfo.recordName[1];
+        ordChar := (ord(sTemp));
+        Result := ordChar;
+      end
+      else
+      begin
+        Result := 0;
+      end;
+    end
+    else if sortCondition = 1 then
+    begin
+      Result := recordInfo.starTime;
+    end
+    else if sortCondition = 2 then
+    begin
+      Result := recordInfo.endTime;
+    end
+    else if sortCondition = 3 then
+    begin
+      Result := recordInfo.costTime;
+    end;
+  end;
+
+  function BubbleSort(var pData: TList; sortCondition: Integer): Integer;
+  var
+    dN, dN1: Double;
+    i, j, iCount: Integer;
+    tRecord: TRecordtyInfo;
+  begin
+    iCount := pData.Count - 1;
+    try
+      for i := 0 to iCount - 1 do
+      begin
+        for j := 0 to iCount - 1 do
+        begin
+          try
+            dN := GetSortCondition(sortCondition, PRecordInfo(pData.Items[j])^);
+            dN1 := GetSortCondition(sortCondition, PRecordInfo(pData.Items[j + 1])^);
+          except
+            dN := 0;
+            dN1 := 0;
+          end;
+          if dN - dN1 > 0 then
+          begin
+            tRecord := PRecordInfo(pData.Items[j])^;
+            PRecordInfo(pData.Items[j])^ := PRecordInfo(pData.Items[j + 1])^;
+            PRecordInfo(pData.Items[j + 1])^ := tRecord;
+          end;
+        end;
+      end;
+    except
+      Exit;
+    end;
+  end;
+
+  procedure QuickSort(var pData: TList; L, R: integer; sortCondition: Integer);
+  var
+    I, J: integer;
+    Lo, Hi, T: Integer;
+    Mid, tRecord, IntTemp: TRecordtyInfo;
+    aL, aH, dMid, dTemp, nJ, nI: Double;
+    s: string;
+  begin
+    Lo := L;
+    Hi := R;
+    if R > pData.Count - 1 then
+    begin
+
+    end;
+
+    Mid := PRecordInfo(pData.Items[(Lo + Hi) div 2])^;
+    dMid := GetSortCondition(sortCondition, Mid);
+    aL := GetSortCondition(sortCondition, PRecordInfo(pData.Items[Lo])^);
+    aH := GetSortCondition(sortCondition, PRecordInfo(pData.Items[Hi])^);
+    repeat
+      while aL - dMid < 0 do
+      begin
+        Inc(Lo);
+        aL := GetSortCondition(sortCondition, PRecordInfo(pData.Items[Lo])^);
+      end;
+      while aH - dMid > 0 do
+      begin
+        Dec(Hi);
+        aH := GetSortCondition(sortCondition, PRecordInfo(pData.Items[Hi])^);
+      end;
+      if Lo <= Hi then
+      begin
+        tRecord := PRecordInfo(pData.Items[Lo])^;
+        PRecordInfo(pData.Items[Lo])^ := PRecordInfo(pData.Items[Hi])^;
+        PRecordInfo(pData.Items[Hi])^ := tRecord;
+        Inc(Lo);
+        Dec(Hi);
+        if Lo <= pData.Count - 1 then
+        begin
+          aL := GetSortCondition(sortCondition, PRecordInfo(pData.Items[Lo])^);
+        end;
+        if Hi >= 0 then
+          aH := GetSortCondition(sortCondition, PRecordInfo(pData.Items[Hi])^);
+      end;
+    until Lo > Hi;
+    if Hi > L then
+    try
+
+      QuickSort(pData, L, Hi, sortCondition);
+    except
+
+    end;
+    if Lo < R then
+      QuickSort(pData, Lo, R, sortCondition);
+  end;
+
+begin
+  l := 0;
+  r := pData.Count - 1;
+  if sortType = 0 then
+  begin
+    star := GetTickCount;
+    BubbleSort(pData, sortCondition);
+    cost := GetTickCount - star;
+  end
+  else if sortType = 1 then
+  begin
+    star := GetTickCount;
+    if r > 0 then
+      QuickSort(pData, l, r, sortCondition);
+    cost := GetTickCount - star;
+  end;
+  sMsg := Format('%d排序成功，排序条件%d, 耗时%d，数组长度%d', [sortType, sortCondition, cost, r]);
+  frmRecord.Memo1.Lines.Add(sMsg);
+end;
+
+procedure TfrmRecord.ListViewWndProc1(var Msg: TMessage);
+var
+  IsNeg: Boolean;
+begin
+  try
+    ShowScrollBar(lvProcess.Handle, SB_HORZ, false);
+    //拖动ListView滚动条时,将EDIT1隐藏起来
+    if (Msg.Msg = WM_VSCROLL) or (Msg.Msg = WM_MOUSEWHEEL) then
+      edtList.Visible := false;
+    //滚动条消息
+    if Msg.Msg = WM_MOUSEWHEEL then
+    begin
+      if lvProcess.Selected = nil then
+        exit;
+      IsNeg := Short(Msg.WParamHi) < 0;
+      lvProcess.SetFocus;
+      if IsNeg then
+        SendMessage(edtList.Handle, WM_KEYDOWN, VK_down, 0)
+      else
+        SendMessage(edtList.Handle, WM_KEYDOWN, VK_up, 0);
+    end
+    else
+      FListViewWndProc1(Msg);
+  except
+  end;
+end;
+
+procedure TfrmRecord.lvProcessClick(Sender: TObject);
+var
+  count: Integer;
+  caption: string;
+  I: TObject;
+  PStep: PHisStep;
+begin
+  if lvProcess.Selected <> nil then
+  begin
+    try
+      caption := lvProcess.Selected.Caption;
+      ClearList;
+      SelectRecordInfo(caption, reInfo);
+      if (count > 0) and (listview.Items.Count > 0) then
+      begin
+        listview.Items.Count := FRecordList.count;
+        listview.Repaint;
+      end;
+    except
+
+    end;
+  end;
+end;
+
+procedure TfrmRecord.lvProcessColumnClick(Sender: TObject; Column: TListColumn);
+begin
+  lvprocess.CustomSort(@CustomSortProc, Column.Index);
+end;
+
+procedure TfrmRecord.lvProcessDblClick(Sender: TObject);
+var
+  caption: string;
+begin
+  caption := lvProcess.Selected.Caption;
+  if caption = '合计' then
+    Exit;
+  if not Assigned(frmSetClass) then
+    Application.CreateForm(TfrmSetClass, frmSetClass);
+  frmSetClass.itemCaption := caption;
+  frmSetClass.ShowModal;
+end;
+
+procedure TfrmRecord.lvProcessMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+var
+  rect: Trect;
+  p: tpoint;
+  wtmp, i: integer;
+begin
+  try
+  //显示编辑控件
+    p.X := X;
+    p.Y := Y;
+    edtList.Visible := false;
+
+  //根据鼠标位置，得到所对应行的LISTITEM
+    editem := lvProcess.GetItemAt(X, Y);
+    if editem <> nil then
+    begin
+   //根据鼠标位置，计算出是哪个 Columns.
+      p := editem.Position;
+      wtmp := p.X;
+      for i := 0 to lvProcess.Columns.Count - 1 do
+        if (X > wtmp) and (X < (wtmp + lvProcess.Column[i].Width)) then
+          break  //找到对应的Columns,打断退出，I确定.
+        else
+          inc(wtmp, lvProcess.Column[i].Width);
+   //根据I的值，取得 Columns的对应位置。在对应位置按其它的SIZE放EDIT1。
+      edtcol := i;
+      rect := editem.DisplayRect(drSelectBounds);
+      edtList.SetBounds(wtmp - 1, rect.Top - 1, lvProcess.Column[i].Width + 1, rect.Bottom - rect.Top + 2);
+      if edtcol > 0 then
+        edtList.Text := editem.SubItems[i - 1]
+      else
+      begin
+        edtList.Text := editem.Caption;
+        edtList.Visible := true;
+        edtList.SetFocus;
+      end;
+
+    end;
+  except
+  end;
+end;
+
+procedure TfrmRecord.N1Click(Sender: TObject);
+var
+  caption: string;
+begin
+  caption := lvProcess.Selected.Caption;
+end;
+
+procedure TfrmRecord.btnPnlTopBackClick(Sender: TObject);
+var
+  tReInfo: TArrRecordtyInfo;
+  PStep: PHisStep;
+  lastStarTime, lastEndTime, lastExe: string;
+  curentPostion: Integer;
+begin
+  curentPostion := FHistoryStep.Count - 2;
+  if curentPostion >= 0 then
+  begin
+    PStep := PHisStep(FHistoryStep.Items[curentPostion]);
+    lastStarTime := PStep.lastStarTime;
+    lastEndTime := PStep.lastEndTime;
+
+    if (lastStarTime <> '') and (lastEndTime <> '') then
+    begin
+      lastExe := PStep.lastExe;
+      if FPageTag = 2 then
+      begin
+        ClearList;
+        SelectRecordInfo(lastExe, reInfo);
+         // listview.Items[3].Selected := True;
+        listview.Items.Count := FRecordList.count;
+        listview.Repaint;
+        listview.SetFocus;
+        listview.ItemIndex := PStep.lasExeCount;
+
+      end;
+    end
+    else
+    begin
+      try
+        ClearList;
+        lastExe := lvProcess.Items[PStep.lasExeCount].caption;
+        SelectRecordInfo(lastExe, reInfo);
+        if (listview.Items.Count > 0) then
+        begin
+         // listview.Items[3].Selected := True;
+          listview.Items.Count := FRecordList.count;
+          listview.Repaint;
+          lvProcess.SetFocus;
+          lvProcess.ItemIndex := PStep.lasExeCount;
+        end;
+      except
+
+      end;
+    end;
+    Dispose(PHisStep(FHistoryStep[curentPostion]));
+    FHistoryStep.Delete(curentPostion);
+    FHistoryStep.Capacity := curentPostion + 1;
+  end;
+end;
+
+procedure TfrmRecord.btnPnlTopRefreshClick(Sender: TObject);
+var
+  tReInfo: TArrRecordtyInfo;
+begin
+  if (lastStarTime <> '') and (lastEndTime <> '') then
+  begin
+    try
+      myTask.GetUlrRecord(lastStarTime, lastEndTime, tReInfo);
+      FArrToList(tReInfo);
+      listview.Items.Count := FRecordList.count;
+      listview.Repaint;
+    except
+   //  Memo1.Lines.Add(IntToStr(count));
+    end
+  end
+  else
+  begin
+    try
+      ClearList;
+      SelectRecordInfo(lastExe, reInfo);
+      if (listview.Items.Count > 0) then
+      begin
+        listview.Items.Count := FRecordList.count;
+        listview.Repaint;
+      end;
+    except
+
+    end;
+  end;
+end;
+
+procedure TfrmRecord.btnMenuQueryClick(Sender: TObject);
+var
+  cost, star: Integer;
+begin
+  star := GetTickCount;
+  if (RzDateTimePicker2.DateTime - RzDateTimePicker1.DateTime >= 0) then
+    DrawRecordView(RzDateTimePicker1.DateTime, RzDateTimePicker2.DateTime);
+  cost := GetTickCount - star;
+  Memo1.Lines.Add('耗时' + inttostr(cost));
+  pgcntrlClient.ActivePageIndex := 0;
+  pgcntrlMenu.Visible := False;
+end;
+
+procedure TfrmRecord.btnNoteClick(Sender: TObject);
+var
+  i, count: Integer;
+  PRecord: PRecordInfo;
+begin
+  //GetDayRecord(0, 0);
+  pgcntrlClient.ActivePageIndex := 2;
+  pgcntrlMenu.Visible := False;
+
+end;
+
+procedure TfrmRecord.btnRuleClick(Sender: TObject);
+var
+  i, count: Integer;
+  PRecord: PRecordInfo;
+  endtime, dTemp, dEndTime, dcost, dSum: Double;
+  lvsContent: TStringList;
+  item: TListItem;
+  s: string;
+begin
+  lvProcess.Clear;
+  lvsContent := TStringList.Create;
+  count := FRecordList.Count;
+  dEndTime := RzDateTimePicker1.Date;
+  for i := 1 to count - 1 do
+  begin
+    PRecord := PRecordInfo(FRecordList.Items[i]);
+    dTemp := PRecord.starTime;
+    dcost := dTemp - dEndTime;
+    dSum := dSum + dcost;
+    if (dTemp <> dEndTime) then
+    begin
+      lvsContent.Add(FormatDateTime('HH:MM:SS', dEndTime));
+      s := FormatDateTime('HH:MM:SS', dTemp) + 'cost' + FormatDateTime('HH:MM:SS', dcost);
+      lvsContent.Add(s);
+      item := lvProcess.Items.Add;
+      AddConsumelist_Content(item, lvsContent);
+      lvsContent.clear;
+    end;
+    dEndTime := PRecord.endTime;
+  end;
+  lvsContent.Add('合计');
+  lvsContent.Add(FormatDateTime('HH:MM:SS', dSum));
+  item := lvProcess.Items.Add;
+  AddConsumelist_Content(item, lvsContent);
+  lvsContent.clear;
+  lvsContent.free;
+end;
+
+procedure TfrmRecord.ListViewCustomDrawItem(Sender: TCustomListView; Item: TListItem; State: TCustomDrawState; var DefaultDraw: Boolean);
+begin
+ // LockWindowUpdate(ListView.Handle);
+  if Item.Index mod 2 <> 0 then
+  begin
+    Item.listview.Canvas.Brush.Color := RGB(238, 238, 238);
+    Item.ListView.Canvas.Font.Color := clblack;
+  end;
+//LockWindowUpdate(0);
+end;
+
+procedure TfrmRecord.ListViewData(Sender: TObject; Item: TListItem);
+var
+  Len: Integer;
+  s: string;
+  lvsContent: TStringList;
+  tReInfo: PRecordInfo;
+begin
+
+  tReInfo := PRecordInfo(FRecordList.Items[Item.Index]);
+  //
+  if FRecordList.Count <= 0 then
+    Exit;
+  if tReInfo.recordName = '' then
+  begin
+    //ShowMessage(IntToStr(Item.Index));
+   // Exit;
+  end;
+  lvsContent := TStringList.Create;
+  lvsContent.Add(tReInfo.recordName);
+  lvsContent.Add(FormatDateTime('YYYY-MM-DD HH:MM:SS', tReInfo.starTime));
+  lvsContent.Add(FormatDateTime('YYYY-MM-DD HH:MM:SS', tReInfo.endTime));
+  lvsContent.Add(FormatDateTime('HH:MM:SS', tReInfo.costTime));
+  AddConsumelist_Content(Item, lvsContent);
+  lvsContent.Clear;
+  lvsContent.Free;
+end;
+
+procedure TfrmRecord.AddComsumelvlist(recordInfo: TRecordInfo);
+var
+  i, count: Integer;
+  item: tlistitem;
+begin
+  count := Length(recordInfo.ActiveTyInfo);
+  for i := 0 to count - 1 do
+  begin
+   { if recordInfo.ActiveTyInfo[i].activetype = '' then
+    begin
+      if CheckSameLvsCaption(recordInfo.ActiveTyInfo[i].activety) then
+      begin
+        item := ListView.Items.Add;
+        item.Caption := recordInfo.ActiveTyInfo[i].activety;
+        item.SubItems.Add((recordInfo.ActiveTyInfo[i].activeContent));
+        item.SubItems.Add(recordInfo.ActiveTyInfo[i].activetype);
+        //item.SubItems.Add(SecondToHour(recordInfo.ActiveTyInfo[i].costime));
+      end;
+    end; }
+   // Memo1.Lines.Add(recordInfo.ActiveTyInfo[i].activeContent);
+  end;
+end;
+
+procedure TfrmRecord.AddConsumelist(columnsTitle, total, goodsList, recordDate, guidS: string);
+var
+  item: tlistitem;
+begin
+  item := ListView.Items.Add;
+  item.Caption := columnsTitle;
+  item.SubItems.Add(goodsList);
+  item.SubItems.Add(total);
+  item.SubItems.Add(recordDate);
+  item.SubItems.Add(guidS);
+end;
+
+procedure TfrmRecord.pngCloseClick(Sender: TObject);
+begin
+  Self.Close;
+end;
+
+function TfrmRecord.SelectRecordInfo(selectCondition: string; reInfo: TArrRecordtyInfo): Integer;
+var
+  i, count, len: Integer;
+  PRecord: PRecordInfo;
+begin
+  len := 0;
+  count := Length(reInfo);
+  for i := 0 to count - 1 do
+  begin
+    if (reInfo[i].recordName = selectCondition) or (selectCondition = '合计') then
+    begin
+      New(PRecord);
+      PRecord.starTime := reInfo[i].starTime;
+      PRecord.endTime := reInfo[i].endtime;
+      PRecord.recordName := reInfo[i].recordName;
+      PRecord.recordTitle := reInfo[i].recordTitle;
+      PRecord.costTime := reInfo[i].costTime;
+      PRecord.valueTag := reInfo[i].valueTag;
+      PRecord.classType := reInfo[i].classType;
+      FRecordList.Add(PRecord);
+    end;
+  end;
+end;
+
+procedure TfrmRecord.SetClassRecord;
+begin
+  FClassRecord.Add('空白');
+  FClassRecord.Add('休眠');
+  FClassRecord.Add('工作');
+  FClassRecord.Add('娱乐');
+  FClassRecord.Add('其他');
+  FClassRecord.Add('未定义');
+end;
+
+procedure TfrmRecord.ShowRecordListview(reInfo: TArrRecordtyInfo);
+begin
+
+end;
+
+procedure TfrmRecord.ShowRecordView(starDate, endDate: Double);
+var
+  recordInfo: TArrRecordInfo;
+  starTime, endTime: string;
+  cost, Star, I, count: Integer;
+  lvsContent: array of string;
+begin
+  starTime := FormatDateTime('YYYY-03-11 HH:MM:SS', starDate);
+  endTime := FormatDateTime('YYYY-MM-DD HH:MM:SS', endDate);
+  //获取当日所有记录。
+  Star := GetTickCount;
+ // myTask.GetDayActiveRecord(starTime, endTime, recordInfo);
+  myTask.GetActiveRecord(starTime, endTime, reInfo, 1, '');
+
+end;
+
+procedure TfrmRecord.TodayRecord;
+var
+  starTime, endTime: string;
+  cost, Star, I, count: Integer;
+  lvsContent: array of string;
+  pReInfo: PRecordInfo;
+begin
+  {
+  recordChart.Title.Text.Strings[0] := FormatDateTime('YYYY-MM-DD', Now) + ' 记录';
+  cost := GetTickCount - Star;
+  Memo1.Clear;
+  Memo1.Lines.Add('耗时' + IntToStr(cost) + '毫秒');
+  // 显示三层记录
+  recordChart.Series[0].Clear;
+ // Exit;
+  count := Length(recordInfo);
+
+  for I := 0 to count - 1 do
+  begin
+    recordChart.Series[0].Add(recordInfo[I].cost, recordInfo[I].classType);
+  end;}
+end;
+
+procedure TfrmRecord.AddConsumelist_Content(item: TListItem; itemContent: TStringList);
+var
+  i, lenContent: Integer;
+begin
+  // 内容
+  lenContent := itemContent.Count;
+  item.Caption := itemContent[0];
+  for i := 1 to lenContent - 1 do
+  begin
+    item.SubItems.Add(itemContent[i]);
+  end;
+end;
+
+procedure TfrmRecord.AddConsumelist_Title(colnumsList: array of string);
+var
+  len, i: Integer;
+begin
+  len := Length(colnumsList);
+  listview.Columns.Clear;
+  for i := 0 to len - 1 do
+  begin
+    listview.Columns.Add;
+    listview.Columns[i].caption := colnumsList[i];
+    listview.Columns[i].Width := 150;
+  end;
+end;
+
+procedure TfrmRecord.AddRecordListview(reInfo: TArrRecordtyInfo);
+var
+  count, i: Integer;
+  sumTime: Double;
+  lvsContent: TStringList;
+  item: TListItem;
+  arrActive: TArrRecordInfo;
+begin
+  arrActive := myTask.GetProcessListType(reInfo);
+  sumTime := 0;
+  count := Length(arrActive);
+  lvsContent := TStringList.Create;
+  try
+    for i := 0 to count - 1 do
+    begin
+      lvsContent.Add(arrActive[i].ActiveTyInfo);
+      lvsContent.Add(FormatDateTime('HH:MM:SS', arrActive[i].cost));
+      sumTime := sumTime + arrActive[i].cost;
+      item := lvProcess.Items.Add;
+      AddConsumelist_Content(item, lvsContent);
+      lvsContent.clear;
+    end;
+  except
+    ShowMessage(IntToStr(i));
+  end;
+  lvsContent.Add('合计');
+  lvsContent.Add(DateTostring(sumTime));
+  item := lvProcess.Items.Add;
+  AddConsumelist_Content(item, lvsContent);
+  lvsContent.Clear;
+  lvsContent.Free;
+
+ // item.Free;
+end;
+
+procedure TfrmRecord.AddRecordLvProcess(reInfo: TArrRecordtyInfo);
+var
+  count, i: Integer;
+  sumTime: Double;
+  lvsContent: TStringList;
+  item: TListItem;
+  arrActive: TArrRecordInfo;
+begin
+  arrActive := myTask.GetProcessListType(reInfo);
+  sumTime := 0;
+  count := Length(arrActive);
+  lvsContent := TStringList.Create;
+  try
+    for i := 0 to count - 1 do
+    begin
+      lvsContent.Add(arrActive[i].ActiveTyInfo);
+      lvsContent.Add('');
+      lvsContent.Add('');
+      lvsContent.Add('');
+      item := lvProcess.Items.Add;
+      AddConsumelist_Content(item, lvsContent);
+      lvsContent.clear;
+    end;
+  except
+    ShowMessage(IntToStr(i));
+    Exit;
+  end;
+  lvsContent.Clear;
+  lvsContent.Free;
+ // item.Free;
+end;
+
+procedure TfrmRecord.edtListChange(Sender: TObject);
+var
+  tempNow, s: string;
+  count: Integer;
+  item: tlistitem;
+begin
+  try
+    if not edtList.Visible then
+      exit;
+    if edtcol = 0 then
+      lvProcess.Selected.Caption := edtList.Text
+    else
+      lvProcess.Selected.SubItems[edtcol - 1] := edtList.Text;
+  except
+  end;
+end;
+
+procedure TfrmRecord.UpdateItem;
+var
+  itemName, itemType, itemContent, classname: string;
+begin
+  if lvProcess.Selected.Selected then
+  begin
+    itemName := lvProcess.Selected.Caption;
+    itemContent := lvProcess.Selected.SubItems.Strings[0];
+    itemType := lvProcess.Selected.SubItems.Strings[1];
+    classname := lvProcess.Selected.SubItems.Strings[2];
+    myTask.SetItemType(itemName, itemType, itemContent, classname);
+  end;
+end;
+
+// 视图
+procedure TfrmRecord.ListViewAdaptColumns(const listive: TRzListView; const pnlWidth: Integer);
+var
+  i, listwith, iPnlW: Integer;
+  newwith: Double;
+begin
+  iPnlW := pnlWidth;
+  listive.DoubleBuffered := True;
+  listwith := listive.Width;
+  newwith := listwith / iPnlW;
+  iPnlW := listwith;
+  listive.Items.BeginUpdate;
+  for i := 0 to listive.Columns.Count - 1 do
+  begin
+    listive.Columns[i].Width := Round(listive.Columns[i].Width * newwith);
+    listive.Columns[i].Width := 200;
+  end;
+  listive.Items.EndUpdate;
+end;
+
+procedure TfrmRecord.ListViewClick(Sender: TObject);
+var
+  caption, starTime, endTime: string;
+  count: Integer;
+  tReInfo: TArrRecordtyInfo;
+  PStep: PHisStep;
+begin
+  if ListView.Selected <> nil then
+  begin
+    ListView.Selected.SubItems[1];
+    caption := ListView.Selected.Caption;
+    starTime := ListView.Selected.SubItems[0];
+    endTime := ListView.Selected.SubItems[1];
+  end;
+
+end;
+
+procedure TfrmRecord.ListViewColumnClick(Sender: TObject; Column: TListColumn);
+begin
+
+  Sort(FRecordList, 1, Column.Index);
+  listview.Items.Count := FRecordList.count;
+  listview.Repaint;
+ // Dispose(PArrRecordtyInfo(P));
+  //listview.CustomSort(@CustomSortProc, Column.Index);
+end;
+
+function CustomSortProc(Item1, Item2: TListItem; ColumnIndex: integer): integer; stdcall;
+begin
+  if ColumnIndex = 0 then
+    Result := CompareText(Item1.Caption, Item2.Caption)
+  else
+    Result := CompareText(Item1.SubItems[ColumnIndex - 1], Item2.SubItems[ColumnIndex - 1]);
+end;
+
+
+//界面居中
+
+function TfrmRecord.FArrToList(sArr: TArrRecordtyInfo): Integer;
+var
+  PRecord: PRecordInfo;
+  i, count: Integer;
+begin
+  count := Length(sArr);
+  ClearList;
+  for i := 0 to count - 1 do
+  begin
+    New(PRecord);
+    PRecord.starTime := sArr[i].starTime;
+    PRecord.endTime := sArr[i].endtime;
+    PRecord.recordName := sArr[i].recordName;
+    PRecord.recordTitle := sArr[i].recordTitle;
+    PRecord.costTime := sArr[i].costTime;
+    PRecord.valueTag := sArr[i].valueTag;
+    PRecord.classType := sArr[i].classType;
+    FRecordList.Add(PRecord);
+  end;
+end;
+
+procedure TfrmRecord.FilterRecordList(processList: TStringList; var dArr: TArrRecordtyInfo; sFilterWord: string);
+begin
+
+end;
+
+function TfrmRecord.FListToArr(sList: TList): TArrRecordtyInfo;
+var
+  PRecord: PRecordInfo;
+  i, count: Integer;
+begin
+  count := sList.Count;
+  SetLength(Result, count);
+  for i := 0 to count - 1 do
+  begin
+    Result[i].starTime := PRecordInfo(sList.Items[i]).starTime;
+    Result[i].endtime := PRecordInfo(sList.Items[i]).endtime;
+    Result[i].recordName := PRecordInfo(sList.Items[i]).recordName;
+    Result[i].recordTitle := PRecordInfo(sList.Items[i]).recordTitle;
+    Result[i].costTime := PRecordInfo(sList.Items[i]).costTime;
+    Result[i].valueTag := PRecordInfo(sList.Items[i]).valueTag;
+    Result[i].classType := PRecordInfo(sList.Items[i]).classType;
+  end;
+end;
+
+procedure TfrmRecord.FormClose(Sender: TObject; var Action: TCloseAction);
+begin
+  Self.Hide;
+end;
+
+procedure TfrmRecord.FormCreate(Sender: TObject);
+var
+  i, len: Integer;
+  appdir: string;
+  dbPath: string;
+  cost, star: Integer;
+  rectInfo: TRectInfo;
+  NewStyle: Integer;
+begin
+ // obj init
+  inherited FormCreate(Sender);
+  FRecordList := TList.Create;
+  FHistoryStep := TList.Create;
+  processList := TStringList.Create;
+  FClassRecord := TStringList.Create;
+  // top
+  lblTitle.Caption := '记录视图';
+  pnlTop.Color := RGB(44, 69, 140);
+  // bottom
+  rectInfo.background := RGB(44, 69, 140);
+  imgBottom.Picture := nil;
+  rectInfo.img := imgBottom;
+  rectInfo.rect := imgBottom.ClientRect;
+  FormMatchColor(rectInfo);
+  // left
+  pnlLeft.Color := RGB(44, 69, 140);
+  //right
+  imgRight.Picture := nil;
+  rectInfo.img := imgRight;
+  rectInfo.rect := imgRight.ClientRect;
+  FormMatchColor(rectInfo);
+  // menu
+  Self.pgcntrlMenu.Visible := False;
+  pnlMenuMain.Parent := Self.MenuTab1;
+  pnlMenuMain.Align := alClient;
+  pnlMenuMain.Color := RGB(43, 43, 43);
+  pgcntrlMenu.Width := pnlQuery.Width;
+  pnlQuery.Parent := Self.MenuTab2;
+  pnlQuery.Align := alClient;
+  pnlQuery.Color := Self.MenuTab1.Color;
+  pgcntrlMenu.ActivePageIndex := 1;
+  // main
+  pnlManiViewPage.Parent := Self.MainTab1;
+  pnlManiViewPage.Align := alClient;
+  pnlMainTop.Parent := Self.MainTab1;
+  pnlMainTop.Align := alTop;
+  pnlMainTop.Color := Self.pnlTop.Color;
+  pnlMainListPage.Parent := Self.MainTab2;
+  SetWindowLong(Handle, GWL_EXSTYLE, GetWindowLong(Handle, GWL_EXSTYLE) or WS_EX_APPWINDOW);
+  //listview
+  listview.DoubleBuffered := True;
+  listview.ViewStyle := vsReport;
+  listview.Checkboxes := True;
+  listview.IconOptions.WrapText := true;
+  listview.OwnerData := True;
+  lvProcess.DoubleBuffered := True;
+  lvProcess.IconOptions.WrapText := true;
+  Label3.Align := alTop;
+  edtList.parent := lvProcess;
+  //init
+  FormInit;
+  //query
+  star := GetTickCount;
+  btnMenuQueryClick(Sender);
+  pgcntrlClient.ActivePageIndex := 0;
+end;
+
+procedure TfrmRecord.FormDestroy(Sender: TObject);
+var
+  count, i: Integer;
+begin
+  ClearList;
+  FClassRecord.Clear;
+  FClassRecord.Free;
+  FRecordList.Free;
+  count := FRecordList.Count;
+  for i := 0 to count - 1 do
+  begin
+    Dispose(PHisStep(FHistoryStep[i]));
+  end;
+  FHistoryStep.Free;
+  processList.Clear;
+  processList.Free;
+
+  inherited;
+
+end;
+
+procedure TfrmRecord.FormInit;
+var
+  i: Integer;
+begin
+  DoubleBuffered := True;
+  BorderStyle := bsNone;  //
+  chtBar.Title.Text.Add('时刻表');
+  RzDateTimePicker2.Date := Now - 1;
+  RzDateTimePicker1.Date := Now - 1;
+  SetClassRecord;
+end;
+
+procedure TfrmRecord.FormShow(Sender: TObject);
+begin
+  Self.Left := (Screen.Width - Self.Width) div 2;
+  Self.Top := (Screen.Height - Self.Height) div 2;
+end;
+
+procedure TfrmRecord.GetDayRecord(starDate, endDate: Double);
+var
+  starTime, endTime: string;
+  cost, Star, I, count: Integer;
+  lvsContent: array of string;
+  PRecord: PRecordInfo;
+begin
+  count := Length(reInfo);
+  lvProcess.Clear;
+  AddRecordListview(reInfo);
+
+end;
+
+procedure TfrmRecord.GetUrl(var recordInfoList: TRecordInfo);
+begin
+end;
+
+procedure TfrmRecord.Image1Click(Sender: TObject);
+var
+  i: Integer;
+begin
+  pgcntrlClient.ActivePageIndex := 1;
+  pnlMainListPage.Width := Self.MainTab2.Width;
+  pnlMainListPage.Height := Self.MainTab2.Height;
+  pnlMainListPage.Align := alClient;
+  lvProcess.Clear;
+  AddRecordListview(reInfo);
+  ListViewAdaptColumns(lvprocess, pgcntrlClient.Width);
+  listview.Items.Count := FRecordList.count;
+  listview.Repaint;
+end;
+
+procedure TfrmRecord.img11Click(Sender: TObject);
+begin
+  btnMenuQueryClick(Sender);
+end;
+
+procedure TfrmRecord.imgBackClick(Sender: TObject);
+begin
+  RzDateTimePicker2.Date := RzDateTimePicker2.Date - 1;
+  RzDateTimePicker1.Date := RzDateTimePicker1.Date - 1;
+  btnMenuQueryClick(Sender);
+
+end;
+
+procedure TfrmRecord.imgForwardClick(Sender: TObject);
+begin
+  RzDateTimePicker2.Date := RzDateTimePicker2.Date + 1;
+  RzDateTimePicker1.Date := RzDateTimePicker1.Date + 1;
+  btnMenuQueryClick(Sender);
+end;
+
+procedure TfrmRecord.imgQueryClick(Sender: TObject);
+begin
+  btnMenuQueryClick(Sender);
+end;
+
+function TfrmRecord.CheckSameLvsCaption(itemName: string): Boolean;
+var
+  i, Len: Integer;
+  lvCaptionList: TStringList;
+begin
+  Result := False;
+  lvCaptionList := TStringList.Create;
+  Len := listview.Items.Count;
+  for i := 0 to Len - 1 do
+  begin
+    lvCaptionList.Add(listview.Items[i].caption);
+  end;
+  Len := lvCaptionList.Count;
+  for i := 0 to Len - 1 do
+  begin
+    if itemName = lvCaptionList[i] then
+    begin
+      Result := False;
+      Exit;
+    end;
+  end;
+  Result := True;
+  lvCaptionList.Free;
+end;
+
+procedure TfrmRecord.chtBarGetAxisLabel(Sender: TChartAxis; Series: TChartSeries; ValueIndex: Integer; var LabelText: string);
+var
+  Hour, Minute: Integer;
+  IntTime: Integer;
+begin
+  Exit;
+end;
+
+procedure TfrmRecord.ClearList;
+var
+  i, count: Integer;
+begin
+  count := FRecordList.Count;
+  for i := 0 to count - 1 do
+  begin
+    Dispose(PRecordInfo(FRecordList[i]));
+  end;
+  FRecordList.Clear;
+end;
+
+procedure TfrmRecord.ComboBox1Change(Sender: TObject);
+begin
+
+  DrawRecordBar(ComboBox1.ItemIndex);
+end;
+
+procedure TfrmRecord.DrawRecordBar(const viewType: Integer = 0);
+var
+  I, j, k, L, count,len: Integer;
+  bar: TBarSeries;
+  cost: Integer;
+  stime: string;
+  interuptTime: Double;
+  yValue: Integer;
+  tPRecord: PRecordInfo;
+  classType: Integer;
+begin
+
+  classType := viewType;
+  chtBar.ClearChart;
+  chtBar.View3D := False;
+  count := FRecordList.Count;
+  if classType = -1 then
+    L := 6
+  else
+    L := 1;
+  for j := 0 to L - 1 do
+  begin
+    bar := TBarSeries.Create(nil);
+   // bar.MultiBar := mbStacked;
+    bar.Marks.Visible := False;
+    chtBar.AddSeries(bar);
+    if viewType <> -1 then
+      classType := viewType
+    else
+      classType := j;
+    for I := 0 to count - 1 do
+    begin
+      tPRecord := PRecordInfo(FRecordList.Items[I]);
+      if tPRecord.ruleType = classType then
+      begin
+        bar.Title := FClassRecord.Strings[tPRecord.ruleType];
+     // stime := Format('%d:00:00', [j]);
+        stime := FormatDateTime('HH:MM', tPRecord.starTime)  +'一'+  FormatDateTime('HH:MM', tPRecord.endTime);
+        cost := Trunc(tPRecord.costTime * 60 * 24);
+        if cost > 5 then
+          bar.Add(cost, stime);
+      end;
+    end;
+  end;
+end;
+
+procedure TfrmRecord.DrawRecordView(startime, endtime: Double);
+var
+  i, j, len, count, cost, star, iCount, blankCount, classCount, sumCount: Integer;
+  sTitle, sRecordName, sClassName: string;
+  sumTotal, tsumTotal, dNow, sumCost: Double;
+  tPRecord: PRecordInfo;
+  classRecord: TArrRecordType;
+begin
+  SetLength(classRecord, 6);
+  classRecord[0].ruleType := '空白';
+  classRecord[1].ruleType := '休眠';
+  classRecord[2].ruleType := '工作';
+  classRecord[3].ruleType := '娱乐';
+  classRecord[4].ruleType := '未定义';
+  classRecord[5].ruleType := '其他';
+  ClearList;
+  myTask.GetClassRecord(startime, endtime, FRecordList);
+  listview.Items.Count := FRecordList.count;
+  listview.Repaint;
+  //sort recordArr;
+  Memo1.Clear;
+
+  iCount := 0;
+  len := Length(classRecord);
+  sumTotal := 0;
+  count := FRecordList.Count;
+  for i := 0 to count - 1 do
+  begin
+    tPRecord := PRecordInfo(FRecordList.Items[i]);
+    sumTotal := sumTotal + tPRecord.costTime;
+    sRecordName := ChecekUrl(tPRecord.recordName);
+    if tPRecord.ruleType = 2 then
+    begin
+      classCount := myTask.JuageRecordClass(sRecordName, classRecord);
+      PRecordInfo(FRecordList.Items[i]).ruleType := classCount;
+    end
+    else
+    begin
+      classCount := tPRecord.ruleType;
+    end;
+    sumCount := length(classRecord[classCount].recordContent) + 1;
+    SetLength(classRecord[classCount].recordContent, sumCount);
+    classRecord[classCount].recordContent[sumCount - 1].recordName := sRecordName;
+    classRecord[classCount].recordContent[sumCount - 1].startime := tPRecord.startime;
+    classRecord[classCount].recordContent[sumCount - 1].endtime := tPRecord.endtime;
+    classRecord[classCount].recordContent[sumCount - 1].costTime := classRecord[classCount].recordContent[sumCount - 1].endtime - classRecord[classCount].recordContent[sumCount - 1].startime;
+  end;
+  sClassName := FormatDateTime('HH:MM:SS', sumTotal);
+    //cost
+  len := Length(classRecord);
+  sumCost := 0;
+  for i := 0 to len - 1 do
+  begin
+    count := Length(classRecord[i].recordContent);
+    for j := 0 to count - 1 do
+    begin
+      sumCost := sumCost + classRecord[i].recordContent[j].costTime;
+    end;
+    classRecord[i].costTime := sumCost;
+    sumCost := 0;
+  end;
+  for j := 0 to len - 1 do
+  begin
+    count := Length(classRecord[j].recordContent);
+    for i := 0 to count - 1 do
+    begin
+      sTitle := FormatDateTime('YYYY-MM-DD HH:MM:SS', classRecord[j].recordContent[i].startime) + ' 一 ' + FormatDateTime('YYYY-MM-DD HH:MM:SS', classRecord[j].recordContent[i].endtime) + '' + '耗时' + DateTostring(classRecord[j].recordContent[i].costTime);
+     // Memo1.Lines.Add(sTitle);
+    end;
+    sTitle := FormatDateTime(classRecord[j].ruleType + '######YYYY-MM-DD HH:MM:SS', startime) + ' 一 ' + FormatDateTime('YYYY-MM-DD HH:MM:SS', endtime) + '耗时' + DateTostring(classRecord[j].costTime) + '######';
+    Memo1.Lines.Add(sTitle);
+    tsumTotal := tsumTotal + classRecord[j].costTime;
+  end;
+  count := FRecordList.Count;
+  Memo1.Lines.Add(DateTostring(sumTotal) + '' + DateTostring(tsumTotal));
+  count := Length(classRecord);
+  sTitle := FormatDateTime('YYYY-MM-DD HH:MM:SS', startime) + ' 一 ' + FormatDateTime('YYYY-MM-DD HH:MM:SS', endtime) + '记录';
+  recordChart.Title.Text.Strings[0] := sTitle;
+  cost := GetTickCount - star;
+  recordChart.Series[0].Clear;
+  for i := 0 to count - 1 do
+  begin
+    recordChart.Series[0].Add(classRecord[i].costTime, classRecord[i].ruleType + DateTostring(classRecord[i].costTime));
+
+  end;
+  Sort(FRecordList, 1, 1);
+  DrawRecordBar(-1);
+  reInfo := classRecord[4].recordContent;
+end;
+
+//listview 编辑
+
+procedure TfrmRecord.ListViewMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+var
+  rect: Trect;
+  p: tpoint;
+  wtmp, i: integer;
+begin
+  try
+  //显示编辑控件
+    edtList.Visible := false;
+  //根据鼠标位置，得到所对应行的LISTITEM
+    editem := lvProcess.GetItemAt(X, Y);
+    if editem <> nil then
+    begin
+   //根据鼠标位置，计算出是哪个 Columns.
+      p := editem.Position;
+      wtmp := p.X;
+      for i := 0 to lvProcess.Columns.Count - 1 do
+        if (X > wtmp) and (X < (wtmp + lvProcess.Column[i].Width)) then
+          break  //找到对应的Columns,打断退出，I确定.
+        else
+          inc(wtmp, lvProcess.Column[i].Width);
+   //根据I的值，取得 Columns的对应位置。在对应位置按其它的SIZE放EDIT1。
+      edtcol := i;
+      rect := editem.DisplayRect(drSelectBounds);
+      edtList.SetBounds(wtmp - 1, rect.Top - 1, lvProcess.Column[i].Width + 1, rect.Bottom - rect.Top + 2);
+      if edtcol > 0 then
+        edtList.Text := editem.SubItems[i - 1]
+      else
+      begin
+        edtList.Text := editem.Caption;
+        edtList.Visible := true;
+        edtList.SetFocus;
+      end;
+
+    end;
+  except
+  end;
+end;
+
+function TfrmRecord.ListviewSelectIndex(sStarTime, sEndTime: string): Integer;
+var
+  i, count: Integer;
+  dStarTime, dEndTime: Double;
+begin
+  Result := 0;
+  dStarTime := VarToDateTime(sStarTime);
+  dEndTime := VarToDateTime(sEndTime);
+  count := FRecordList.Count - 1;
+  for i := 0 to count - 1 do
+  begin
+    if (PRecordInfo(FRecordList.Items[i]).starTime = dStarTime) and (PRecordInfo(FRecordList.Items[i]).endtime = dEndTime) then
+    begin
+      Result := i;
+      Exit;
+    end;
+  end;
+end;
+
+end.
+

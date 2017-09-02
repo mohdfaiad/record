@@ -1,0 +1,134 @@
+unit uConst;
+
+interface
+
+uses
+  Windows, SysUtils, Variants, Classes, Registry;
+
+type
+  THostInfo = record
+    ip: string;
+    port: Integer;
+  end;
+
+function UnixToDateTime(const USec: Double): TDateTime;
+
+function DateTimeToUnix(const ADate: TDateTime): Double;
+
+function FileToString(mFileName: TFileName): string;
+
+function GetGUID: string;
+
+function SetAutoRun(ok: boolean; exename: string): Integer;
+
+function timeToSecond(times: string): Integer;
+
+function ShutDown(hostname: THostInfo): Integer;
+
+implementation
+
+function UnixToDateTime(const USec: Double): TDateTime;
+var
+  // 1601年1月1日0时0分0秒
+  ZI: TTimeZoneInformation;
+begin
+  GetTimeZoneInformation(ZI);     //时差
+  Result := (USec - 60 * zi.Bias) / 86400 + VarToDateTime('1601-01-01 00:00:00AM');
+end;
+
+function DateTimeToUnix(const ADate: TDateTime): Double;
+var
+  ZI: TTimeZoneInformation;
+  unixTime: TDateTime;
+begin
+  unixTime := VarToDateTime('1601-01-01 00:00:00AM');
+  GetTimeZoneInformation(ZI);     //时差
+  Result := (ADate - unixTime) * 86400 + 60 * zi.Bias;
+
+end;
+
+function StreamToString(mStream: TStream): string;
+{   将内存流转换成字符串   }
+var
+  I: Integer;
+begin
+  Result := '';
+  if not Assigned(mStream) then
+    Exit;
+  SetLength(Result, mStream.Size);
+  for I := 0 to Pred(mStream.Size) do
+  try
+    mStream.Position := I;
+    mStream.Read(Result[Succ(I)], 1);
+  except
+    Result := '';
+  end;
+end;   {   StreamToString   }
+
+function FileToString(mFileName: TFileName): string;
+{   返回从文件载入字符串   }
+var
+  vFileChar: file of Char;
+  vChar: Char;
+begin
+  Result := '';
+{$I-}
+  AssignFile(vFileChar, mFileName);
+  Reset(vFileChar);
+
+  while not Eof(vFileChar) do
+  begin
+    Read(vFileChar, vChar);
+    Result := Result + vChar;
+  end;
+  CloseFile(vFileChar);
+{$I+}
+end;   {   FileToString   }
+
+function GetGUID: string;
+var
+  LTep: TGUID;
+begin
+  CreateGUID(LTep);
+  Result := GUIDToString(LTep);
+end;
+
+function SetAutoRun(ok: boolean; exename: string): Integer;
+var
+  Reg: TRegistry; //首先定义一个TRegistry类型的变量Reg
+begin
+  Reg := TRegistry.Create;
+  try //创建一个新键
+    Reg.RootKey := HKEY_LOCAL_MACHINE; //将根键设置为HKEY_LOCAL_MACHINE
+    Reg.OpenKey('Software\Microsoft\Windows\CurrentVersion\Run', true); //打开一个键
+    if ok then
+    begin
+      Reg.WriteString('SMS服务', exename); //在Reg这个键中写入数据名称和数据数值
+    end
+    else
+    begin
+      reg.DeleteValue('SMS服务');
+    end;
+    Reg.CloseKey; //关闭键
+  finally
+    Reg.Free;
+  end;
+end;
+
+function timeToSecond(times: string): Integer;
+var
+  temp: string;
+  h, m, s: Integer;
+begin
+  temp := Copy(times, 1, 2);
+  h := StrToInt(temp) * 3600;
+  temp := Copy(times, 4, 2);
+  m := StrToInt(temp) * 60;
+  Result := H + M;
+end;
+function ShutDown(hostname: THostInfo): Integer;
+begin
+
+end;
+end.
+

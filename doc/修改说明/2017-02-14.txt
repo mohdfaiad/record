@@ -1,0 +1,4 @@
+显示类型
+  recordType ： string
+  cost:  double  转时分秒
+  recordArr ： array of recordInfo
