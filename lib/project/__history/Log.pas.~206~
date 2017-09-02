@@ -340,6 +340,9 @@ end;
 
 destructor TAsynchronousLog.Destroy;
 begin
+
+  if Mylog.FLogBuffer.FBuffer <> '' then
+    WriteLog;
  // FMyLog.Free;
   inherited;
 end;
@@ -355,7 +358,7 @@ begin
     end
     else
     begin
-      Sleep(1);
+      Sleep(0);
     end;
 
   end;

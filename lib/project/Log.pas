@@ -358,7 +358,7 @@ begin
     end
     else
     begin
-      Sleep(0);
+      Sleep(1);
     end;
 
   end;
